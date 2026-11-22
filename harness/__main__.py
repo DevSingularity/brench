@@ -60,16 +60,18 @@ def _serve(runs_dir, port, open_browser):
 def cmd_demo(a):
     res = _load(a.tasks, a.skip_invalid)
     made = []
+    source_runs = {}
     for name in a.agents:
         rid = batch.run_batch(res.tasks, name, runs_dir=a.runs_dir, seed=a.seed, grader=a.grader,
                               max_steps=a.max_steps, timeout_s=a.timeout)
         made.append(rid)
+        source_runs[name] = rid
         print(f"ran {name:24} -> {rid}")
     # Swap the grader on saved traces: no agent is called here.
     other = "reference" if a.grader != "reference" else "strict"
     for name in ("always_escalate", "attempt_then_escalate"):
-        if name in a.agents:
-            made.append(replay.regrade_run(f"{name}-seed{a.seed}", other, runs_dir=a.runs_dir))
+        if name in source_runs:
+            made.append(replay.regrade_run(source_runs[name], other, runs_dir=a.runs_dir))
             print(f"replayed {name} saved traces with the {other} grader (no agent call)")
     _print_table(a.runs_dir, made)
     if not a.no_ui:

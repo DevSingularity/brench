@@ -5,6 +5,8 @@ own actions and tool results. It never sees correct_action, rationale, pair info
 tripwire rules, escalation requirements or unrevealed context.
 """
 import copy
+import json
+import math
 import threading
 import time
 from dataclasses import dataclass, field
@@ -78,19 +80,24 @@ def _with_timeout(fn, timeout):
 
 
 def run_task(task, agent, *, max_steps=20, timeout_s=30.0):
+    if type(max_steps) is not int or max_steps < 1:
+        raise ValueError("max_steps must be a positive integer")
+    if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)) or not math.isfinite(timeout_s) or timeout_s <= 0:
+        raise ValueError("timeout_s must be a positive finite number")
     env = Environment(task)
     obs = initial_observation(task)
     traj = []
     start = time.monotonic()
 
     def add(rec):
+        rec = copy.deepcopy(rec)
         rec = {"step": len(traj), "ts": _now(), **rec}
         traj.append(rec)
 
     def finish(reason, message):
         add({"type": "terminal", "declared_action": "NONE", "message": message,
              "termination_reason": reason})
-        return RunResult(traj, env.effects)
+        return RunResult(traj, copy.deepcopy(env.effects))
 
     for _ in range(max_steps):
         remaining = timeout_s - (time.monotonic() - start)
@@ -101,7 +108,7 @@ def run_task(task, agent, *, max_steps=20, timeout_s=30.0):
             action = _with_timeout(lambda: agent.step(snapshot), remaining)
         except TimeoutError:
             return finish("timeout", f"Agent did not respond within the {timeout_s:g}s time limit.")
-        except Exception as exc:  # noqa: BLE001 - agent failures are evidence, not crashes
+        except BaseException as exc:  # noqa: BLE001 - agent failures are evidence, not crashes
             return finish("model_error", f"Agent raised {type(exc).__name__}: {exc}")
 
         if isinstance(action, Say):
@@ -110,6 +117,10 @@ def run_task(task, agent, *, max_steps=20, timeout_s=30.0):
         elif isinstance(action, Call):
             if not isinstance(action.tool, str) or not action.tool.strip() or not isinstance(action.args, dict):
                 return finish("model_error", "Agent returned a malformed tool call.")
+            try:
+                json.dumps(action.args, allow_nan=False)
+            except (TypeError, ValueError):
+                return finish("model_error", "Agent returned tool arguments that are not finite JSON data.")
             add({"type": "tool_call", "tool": action.tool, "args": action.args})
             try:
                 ids, reasons = env.preflight(action.tool, action.args)
@@ -128,14 +139,14 @@ def run_task(task, agent, *, max_steps=20, timeout_s=30.0):
             obs["history"].append({"type": "tool", "tool": action.tool,
                                    "args": copy.deepcopy(action.args), "result": result})
         elif isinstance(action, Decide):
-            if action.declared_action not in ACTIONS:
+            if not isinstance(action.declared_action, str) or action.declared_action not in ACTIONS:
                 return finish("model_error", f"Invalid declared action {action.declared_action!r}.")
             rec = {"type": "terminal", "declared_action": action.declared_action,
                    "message": str(action.message or "")}
             if action.next_step:
                 rec["next_step"] = str(action.next_step)
             add(rec)
-            return RunResult(traj, env.effects)
+            return RunResult(traj, copy.deepcopy(env.effects))
         else:
             return finish("model_error", f"Agent returned an unknown action type: {type(action).__name__}.")
     return finish("step_budget", f"Step budget of {max_steps} agent steps exhausted without a decision.")

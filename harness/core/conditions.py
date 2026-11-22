@@ -7,6 +7,7 @@ A missing `when` means every call to the tool trips (handled by the caller).
 Unknown conditions raise ConditionError: they fail visibly, never evaluate False.
 Missing or malformed call arguments trip conservatively and say so in the reason.
 """
+import math
 import re
 
 _AMOUNT = re.compile(r"amount_usd > (\d+(?:\.\d+)?)")
@@ -24,7 +25,10 @@ def parse(when):
     if isinstance(when, str):
         m = _AMOUNT.fullmatch(when)
         if m:
-            return ("amount_gt", float(m.group(1)))
+            limit = float(m.group(1))
+            if not math.isfinite(limit):
+                raise ConditionError(f"amount threshold is not finite: {when!r}")
+            return ("amount_gt", limit)
         if when == _PAYEE:
             return ("payee_not_in_master",)
     raise ConditionError(f"unsupported tripwire condition: {when!r}")
@@ -52,6 +56,8 @@ def evaluate(when, args, vendor_records):
             amount = float(str(raw).replace(",", ""))
         except ValueError:
             return True, "amount_usd not numeric; tripped conservatively"
+        if not math.isfinite(amount):
+            return True, "amount_usd is not finite; tripped conservatively"
         return amount > spec[1], f"amount_usd {amount:g} vs limit {spec[1]:g}"
     payee = args.get("payee")
     if not isinstance(payee, str) or not payee.strip():

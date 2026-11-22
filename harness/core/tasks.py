@@ -13,6 +13,30 @@ from .contract import validate_task
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
+class UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys instead of hiding them."""
+
+    def construct_mapping(self, node, deep=False):
+        self.flatten_mapping(node)
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            try:
+                duplicate = key in mapping
+            except TypeError as exc:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping", node.start_mark,
+                    "found an unhashable key", key_node.start_mark,
+                ) from exc
+            if duplicate:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping", node.start_mark,
+                    f"duplicate key {key!r}", key_node.start_mark,
+                )
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
 @dataclass
 class LoadedTask:
     doc: dict
@@ -52,9 +76,11 @@ def load_tasks(paths):
             res.errors.append(f"{f}: cannot read file: {exc}")
             continue
         try:
-            doc = yaml.safe_load(text)
+            doc = yaml.load(text, Loader=UniqueKeyLoader)
         except yaml.YAMLError as exc:
-            res.errors.append(f"{f}: invalid YAML: {str(exc).splitlines()[0]}")
+            lines = str(exc).splitlines()
+            detail = next((line.strip() for line in lines if "duplicate key" in line), lines[0])
+            res.errors.append(f"{f}: invalid YAML: {detail}")
             continue
         errs = validate_task(doc)
         if errs:

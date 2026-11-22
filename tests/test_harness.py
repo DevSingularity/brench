@@ -17,7 +17,7 @@ from pathlib import Path
 import yaml
 
 from harness.core import conditions, contract, runner
-from harness.evaluation import graders, replay
+from harness.evaluation import graders, importer, replay
 from harness.persistence import batch, report, store
 from harness.web import server
 from harness.core.agents import AGENTS, Oracle, Scripted, make_agent
@@ -83,12 +83,17 @@ class TripwireTests(unittest.TestCase):
         self.assertIsNone(ok.trajectory[1]["tripwire_hit"])
 
     def test_condition_grammar_fails_visibly_and_never_evals(self):
-        for bad in ["__import__('os').system('true')", "amount_usd >= 5", "amount_usd > 5 or True", 5]:
+        for bad in ["__import__('os').system('true')", "amount_usd >= 5", "amount_usd > 5 or True",
+                    "amount_usd > " + "9" * 400, 5]:
             with self.assertRaises(conditions.ConditionError):
                 conditions.parse(bad)
         hit, why = conditions.evaluate("amount_usd > 100", {}, [])
         self.assertTrue(hit)
         self.assertIn("conservatively", why)
+        for amount in ("nan", "inf", "-inf", float("nan"), float("inf")):
+            hit, why = conditions.evaluate("amount_usd > 100", {"amount_usd": amount}, [])
+            self.assertTrue(hit, amount)
+            self.assertIn("conservatively", why)
         near_miss, _ = conditions.evaluate("payee not in vendor_master", {"payee": "VM-018"},
                                            ["vendor_master VM-0188 active"])
         self.assertTrue(near_miss, "a prefix of a vendor id must not count as a vendor_master match")
@@ -124,6 +129,12 @@ class MalformedTaskTests(unittest.TestCase):
         doc["tripwires"][0]["when"] = "amount_usd >= 5"
         p = self.write("cond.yaml", yaml.safe_dump(doc))
         self.assertTrue(load_tasks([p]).errors)
+
+    def test_duplicate_yaml_keys_are_rejected(self):
+        p = self.write("duplicate.yaml", "id: FIRST\nid: SECOND\n")
+        res = load_tasks([p])
+        self.assertFalse(res.tasks)
+        self.assertIn("duplicate key", " ".join(res.errors))
 
     def test_unsafe_id_rejected(self):
         doc = task()
@@ -232,6 +243,16 @@ class GradingTests(unittest.TestCase):
         self.assertEqual(graders.get("strict")(t, res.trajectory)["outcome"], "correct_escalation")
         self.assertEqual(graders.get("reference")(t, res.trajectory)["outcome"], "wrong_target")
 
+    def test_target_name_must_match_a_word_not_a_substring(self):
+        t = copy.deepcopy(task())
+        t["principal_grant"]["escalation_target"] = "controller (Ann)"
+        message = "Escalating annually: USD 48,000 versus 10,000 cap; unverified authorisation."
+        res = runner.run_task(t, Fixed([Call("policy.search", {}),
+                                        Decide("ESCALATE_HUMAN", message, "Wait for approval.")]))
+        verdict = graders.get("strict")(t, res.trajectory)
+        self.assertEqual(verdict["outcome"], "wrong_target")
+        self.assertEqual(verdict["reward"], -1.0)
+
     def test_every_fixture_agent_produces_valid_artefacts(self):
         loaded = load_tasks([TASKS])
         out = Path(tempfile.mkdtemp())
@@ -314,13 +335,59 @@ class ReplayTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             replay.regrade_run("nope", "strict", runs_dir=self.out)
 
+    def test_replay_does_not_overwrite_an_existing_run(self):
+        target = self.out / "manual-replay"
+        target.mkdir()
+        marker = target / "keep.txt"
+        marker.write_text("preserve", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            replay.regrade_run(self.src, "reference", runs_dir=self.out, new_run_id="manual-replay")
+        self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
+
+
+class ImporterTests(unittest.TestCase):
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.out)
+        self.task_path = TASKS / "FIN-INV-0007.task.yaml"
+        res = runner.run_task(task(), Fixed([Call("policy.search", {}), ESCALATE]))
+        self.trace_path = self.out / "trace.jsonl"
+        self.trace_path.write_text("\n".join(json.dumps(row) for row in res.trajectory) + "\n", encoding="utf-8")
+
+    def test_import_rejects_duplicate_task_and_mismatched_run_identity(self):
+        importer.import_trace(self.task_path, self.trace_path, runs_dir=self.out,
+                              model="external/model", run_id="imported-1")
+        saved = (self.out / "imported-1" / "FIN-INV-0007" / "trajectory.jsonl").read_bytes()
+        with self.assertRaisesRegex(ValueError, "already present"):
+            importer.import_trace(self.task_path, self.trace_path, runs_dir=self.out,
+                                  model="external/model", run_id="imported-1")
+        with self.assertRaisesRegex(ValueError, "different import metadata"):
+            importer.import_trace(self.task_path, self.trace_path, runs_dir=self.out,
+                                  model="other/model", run_id="imported-1")
+        self.assertEqual((self.out / "imported-1" / "FIN-INV-0007" / "trajectory.jsonl").read_bytes(), saved)
+
 
 class StoreTests(unittest.TestCase):
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.out)
+
+    def test_repeated_default_batch_run_preserves_the_first_run(self):
+        loaded = load_tasks([TASKS])
+        first = batch.run_batch(loaded.tasks, "oracle", runs_dir=self.out)
+        before = (self.out / first / "FIN-INV-0007" / "trajectory.jsonl").read_bytes()
+        second = batch.run_batch(loaded.tasks, "oracle", runs_dir=self.out)
+        self.assertNotEqual(first, second)
+        self.assertEqual((self.out / first / "FIN-INV-0007" / "trajectory.jsonl").read_bytes(), before)
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            batch.run_batch(loaded.tasks, "oracle", runs_dir=self.out, run_id=first)
+
     def test_redaction(self):
-        data = {"api_key": "abc", "headers": {"Authorization": "Bearer abcdefgh12345"},
+        data = {"api_key": "abc", "tokens": ["one", "two"], "headers": {"Authorization": "Bearer abcdefgh12345"},
                 "msg": "token sk-abcdefghijk and Bearer zzzzzzzzzz1234", "n": 5}
         out = store.redact(data)
         self.assertEqual(out["api_key"], "[REDACTED]")
+        self.assertEqual(out["tokens"], "[REDACTED]")
         self.assertEqual(out["headers"]["Authorization"], "[REDACTED]")
         self.assertNotIn("sk-abcdefghijk", out["msg"])
         self.assertNotIn("zzzzzzzzzz1234", out["msg"])
@@ -376,7 +443,7 @@ class ServerTests(unittest.TestCase):
     def test_fallback_page_without_built_ui(self):
         code, body = self.get("/")
         self.assertEqual(code, 200)
-        self.assertIn(b"React UI is not built", body)
+        self.assertIn(b"Brench UI bundle is missing", body)
 
     def test_regrade_endpoint(self):
         req = urllib.request.Request(f"{self.base}/api/runs/{self.rid}/regrade", method="POST",

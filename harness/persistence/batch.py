@@ -1,6 +1,7 @@
 """Run one agent over a task set, grade each trajectory, and save the evidence."""
 import platform
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .. import __version__
 from ..core.agents import make_agent
@@ -14,9 +15,22 @@ FIXTURE_NOTE = "Scripted fixture agent. Not a live model; results say nothing ab
 def run_batch(loaded_tasks, agent_name, *, runs_dir, run_id=None, seed=0, grader=graders.DEFAULT,
               max_steps=20, timeout_s=30.0):
     grade = graders.get(grader)
-    run_id = run_id or f"{agent_name}-seed{seed}"
+    base_run_id = run_id or f"{agent_name}-seed{seed}"
+    if run_id is not None:
+        run_path = store.run_dir(runs_dir, run_id)
+        if run_path.exists():
+            raise ValueError(f"run {run_id!r} already exists; choose a new run id to preserve prior evidence")
+    else:
+        run_id = base_run_id
+        run_path = store.run_dir(runs_dir, run_id)
+        if run_path.exists():
+            while run_path.exists():
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+                run_id = f"{base_run_id}-{stamp}"
+                run_path = store.run_dir(runs_dir, run_id)
+    Path(runs_dir).mkdir(parents=True, exist_ok=True)
+    run_path.mkdir(exist_ok=False)
     model = f"fixture/{agent_name}"
-    store.reset_run(runs_dir, run_id)
     ids = []
     for lt in loaded_tasks:
         task = lt.doc

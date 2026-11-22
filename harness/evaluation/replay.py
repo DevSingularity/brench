@@ -19,11 +19,20 @@ def regrade_run(src_run_id, grader_name, *, runs_dir, new_run_id=None):
     if not (src / "meta.json").is_file():
         raise FileNotFoundError(f"run {src_run_id!r} not found")
     meta = store.load_run_meta(runs_dir, src_run_id)
+    explicit_new_id = new_run_id is not None
     new_run_id = new_run_id or f"{src_run_id}__{grader_name}"
     if new_run_id == src_run_id:
         raise ValueError("replay needs a different run id than its source")
-    store.reset_run(runs_dir, new_run_id)
+    if explicit_new_id and store.run_dir(runs_dir, new_run_id).exists():
+        raise ValueError(f"run {new_run_id!r} already exists; choose a new run id to preserve prior evidence")
+    base_id = new_run_id
+    if not explicit_new_id:
+        suffix = 2
+        while store.run_dir(runs_dir, new_run_id).exists():
+            new_run_id = f"{base_id}-{suffix}"
+            suffix += 1
     dst = store.run_dir(runs_dir, new_run_id)
+    dst.mkdir(parents=True, exist_ok=False)
     ids = []
     for tid in store.task_ids(runs_dir, src_run_id):
         sdir, ddir = src / tid, dst / tid

@@ -34,9 +34,9 @@ def fallback_page(runs_dir):
                     f"<td>{html.escape(s.get('grader_version', ''))}</td><td>{t['n']}</td>"
                     f"<td>{t['correct']}</td><td>{t['unauthorised']}</td><td>{t['over_escalation']}</td>"
                     f"<td>{t['other_errors']}</td></tr>")
-    return ("<!doctype html><meta charset=utf-8><title>Escalation-Bench runs</title>"
-            "<body style='font-family:system-ui;margin:2rem'><h1>Escalation-Bench runs</h1>"
-            "<p>The React UI is not built. Run <code>cd ui &amp;&amp; npm install &amp;&amp; npm run build</code>. "
+    return ("<!doctype html><meta charset=utf-8><title>Brench runs</title>"
+            "<body style='font-family:system-ui;margin:2rem'><h1>Brench runs</h1>"
+            "<p>The Brench UI bundle is missing. Rebuild it with <code>cd ui &amp;&amp; pnpm install &amp;&amp; pnpm build</code>. "
             "The JSON API is available under <code>/api/runs</code>.</p>"
             "<table border=1 cellpadding=6><tr><th>run</th><th>kind</th><th>grader</th><th>tasks</th>"
             "<th>correct</th><th>unauthorised</th><th>over-escalation</th><th>other errors</th></tr>"
@@ -47,7 +47,7 @@ def make_handler(runs_dir, ui_dist):
     runs_dir, ui_dist = Path(runs_dir), Path(ui_dist)
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "EscalationBench/0.1"
+        server_version = "Brench/0.1"
 
         def log_message(self, fmt, *args):
             sys.stderr.write("[server] " + fmt % args + "\n")
@@ -90,8 +90,12 @@ def make_handler(runs_dir, ui_dist):
             if name == "task":
                 return self._json(200, report.task_detail(runs_dir, args[0], args[1]))
             if name == "regrade":
-                length = min(int(self.headers.get("Content-Length") or 0), 4096)
+                length = int(self.headers.get("Content-Length") or 0)
+                if length < 0 or length > 4096:
+                    raise ValueError("request body must be between 0 and 4096 bytes")
                 body = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(body, dict):
+                    raise ValueError("request body must be a JSON object")
                 grader = body.get("grader", "")
                 if grader not in graders.GRADERS:
                     raise ValueError(f"unknown grader {grader!r}; choose from {sorted(graders.GRADERS)}")

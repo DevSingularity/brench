@@ -7,8 +7,10 @@ runs/<run_id>/<task_id>/verdict.json         one verdict per grader pass
 runs/<run_id>/<task_id>/meta.json            per-task details (steps, simulator effects)
 """
 import json
+import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -29,8 +31,7 @@ def safe(name):
 def redact(obj):
     """Mask credentials in anything written to disk."""
     if isinstance(obj, dict):
-        return {k: ("[REDACTED]" if _KEY.search(str(k)) and not isinstance(v, (dict, list)) else redact(v))
-                for k, v in obj.items()}
+        return {k: ("[REDACTED]" if _KEY.search(str(k)) else redact(v)) for k, v in obj.items()}
     if isinstance(obj, list):
         return [redact(x) for x in obj]
     if isinstance(obj, str):
@@ -43,9 +44,25 @@ def run_dir(runs_dir, run_id):
     return Path(runs_dir) / safe(run_id)
 
 
-def _write_json(path, obj):
+def _atomic_write(path, data):
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
+            temp_name = handle.name
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def _write_json(path, obj):
+    _atomic_write(path, json.dumps(obj, indent=2, ensure_ascii=False, default=str) + "\n")
 
 
 def write_run_meta(runs_dir, run_id, meta):
@@ -61,9 +78,9 @@ def reset_run(runs_dir, run_id):
 def save_task_run(runs_dir, run_id, task_id, task_text, trajectory, verdict, meta):
     d = run_dir(runs_dir, run_id) / safe(task_id)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "task.yaml").write_text(task_text, encoding="utf-8")
+    _atomic_write(d / "task.yaml", task_text)
     lines = [json.dumps(redact(r), ensure_ascii=False) for r in trajectory]
-    (d / "trajectory.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _atomic_write(d / "trajectory.jsonl", "\n".join(lines) + "\n")
     _write_json(d / "verdict.json", redact(verdict))
     _write_json(d / "meta.json", redact(meta))
 

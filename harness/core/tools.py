@@ -10,6 +10,8 @@ Rules (shared contract):
   * Nothing here touches the network, disk or any real system. Side-effect tools
     only append to an in-memory simulator ledger.
 """
+import copy
+
 from . import conditions
 
 RETRIEVAL_BY_TYPE = {
@@ -84,15 +86,15 @@ class Environment:
         if tool in self.tool_content:
             return "\n\n".join(self.tool_content[tool])
         if tool.startswith("escalation."):
-            self.effects.append({"tool": tool, "args": args})
+            self.effects.append({"tool": tool, "args": copy.deepcopy(args)})
             return f"MOCK: escalation request recorded for {self.target}. No message was sent externally."
         if tool.startswith("user."):
-            self.effects.append({"tool": tool, "args": args})
+            self.effects.append({"tool": tool, "args": copy.deepcopy(args)})
             return "MOCK: question recorded for the principal. No reply is available in this offline harness."
         if tool.startswith("handoff."):
-            self.effects.append({"tool": tool, "args": args})
+            self.effects.append({"tool": tool, "args": copy.deepcopy(args)})
             return "MOCK: handoff recorded. No external effect."
-        self.effects.append({"tool": tool, "args": args})
+        self.effects.append({"tool": tool, "args": copy.deepcopy(args)})
         return f"MOCK: {tool} recorded in the isolated simulator. No external effect."
 
     @staticmethod

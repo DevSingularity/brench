@@ -1,9 +1,41 @@
-# Decision Bench
+# Brench
 
-Decision Bench evaluates whether an AI agent acted within its authority. It
+Brench evaluates whether an AI agent acted within its authority. It
 runs scripted agents against task-defined mock tools, keeps a complete trace,
 grades the decision with deterministic rules, and serves the evidence in a
 local results UI. It does not use an LLM as a judge.
+
+## Track B scope (candidate clarification)
+
+This project is **Track B: full-stack harness**. The official clarification for
+all candidates, kept here so future work stays in scope:
+
+- **Tasks:** Two sample task YAML files are supplied in `starter/examples/`.
+  Track B uses these to build the evaluation harness. (Track A creates six task
+  pairs / 12 tasks; Track C builds an environment that generates reproducible
+  task instances.)
+- **Fixture agent (Track B):** a simple scripted agent that calls mock tools and
+  produces an execution trace. It does not require an LLM.
+- **Judge/grader (Track B):** separate from the agent; it evaluates the saved
+  trace against the task rules. A deterministic grader is sufficient; you may
+  adapt `starter/reference_grader.py` with attribution.
+- **Required Track B flow:** Task → fixture agent → saved trace → grader →
+  results UI. Demonstrate swapping the grader and re-grading **without rerunning
+  the agent**.
+
+How this repo maps to that flow:
+
+| Required step | Where it lives |
+|---|---|
+| Task | `tasks/` — the two supplied samples `FIN-INV-0007` / `FIN-INV-0007b` (plus two extra self-authored pairs, `HR-0201-*` and `REF-0101-*`, built on the same contract to exercise the multi-domain results matrix) |
+| Fixture agent | `harness/core/agents.py` — six scripted agents, no LLM |
+| Saved trace | `runs/<run_id>/<task_id>/trajectory.jsonl` written by `harness/core/runner.py` |
+| Grader | `harness/evaluation/graders/` — `strict` (ours) and `reference` (adapted from the supplied `reference_grader.py`, attribution in the module docstring) |
+| Results UI | `harness/web/server.py` + `ui/` (built output committed in `ui/dist`) |
+| Grader swap without rerunning the agent | `python -m harness replay <run> --grader reference` — copies the saved trace byte-for-byte, grades again, `kind: replay`, source untouched |
+
+The step-by-step demo script with defence notes for each decision is in
+`docs/plans/WALKTHROUGH.md`.
 
 ## Run the offline demo
 
@@ -12,13 +44,17 @@ UI is committed under `ui/dist`; Node is only needed when changing the UI.
 
 ```sh
 python -m pip install -r requirements.txt
+docker compose up -d db
 python -m harness demo
 ```
 
 The command runs the fixture agents over `tasks/`, writes saved evidence under
 `runs/`, and serves the UI at `http://127.0.0.1:8765`. Use `--no-browser` to
 keep it from opening a browser automatically. No API key or network access is
-needed after PyYAML is installed.
+needed after PyYAML is installed. Docker Compose starts PostgreSQL 16 for local
+persistence; only the database is containerized. The Python server and UI run on
+the host. Copy `.env.example` to `.env` and configure `DATABASE_URL` before
+starting the app.
 
 Useful commands:
 
@@ -31,7 +67,7 @@ python -m unittest discover -s tests -v
 ```
 
 For UI development only, install the pinned JavaScript dependencies in `ui/`
-and run `npm run dev` or `npm run build`. Rebuilds update the committed
+and run `pnpm dev` or `pnpm build`. Rebuilds update the committed
 `ui/dist/` that Python serves.
 
 ## Project layout
