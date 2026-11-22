@@ -63,6 +63,33 @@ UI. It contains 50 matched pairs of payment-authority tasks. Start with
 without executing the agent again. The fixtures use simple rules and generated
 records; they do not reason like deployed agents.
 
+## Deploy on an Ubuntu VPS
+
+Point an A record for your domain at the VPS public IP. Allow inbound TCP 80 and
+443 in the VPS firewall/security group (and SSH for administration); do not
+open port 8765. From the repository checkout on the VPS, run:
+
+```sh
+sudo ./scripts/deploy-vps.sh brench.singularitydev.xyz you@example.com
+```
+
+The script installs Docker Engine/Compose, Nginx, and Certbot; builds and starts
+the app; obtains a Let's Encrypt certificate; redirects HTTP to HTTPS; and
+prompts you to create HTTP Basic Auth credentials. The app stays bound to VPS
+loopback port 8765, behind Nginx. Open `https://brench.singularitydev.xyz` and
+sign in with the credentials you created. Certbot's systemd timer renews the
+certificate and reloads Nginx. This installer currently supports Ubuntu.
+
+Evaluation files persist in the `brench-runs` Docker volume across container
+restarts and ordinary `docker compose down` / `up` cycles. Back up that volume
+before replacing or migrating the VPS. **`docker compose down -v` deletes it.**
+Use `docker compose logs -f app` to inspect server logs and
+`docker compose ps` to check health.
+
+This deployment still uses filesystem storage inside the app volume. The
+PostgreSQL service is available only through the explicit `database` profile
+and is not connected to the app.
+
 ## What gets saved
 
 The default backend is the local filesystem. A run has a unique ID and stores
@@ -153,8 +180,9 @@ Run the Python test suite with:
 python -m unittest discover -s tests -v
 ```
 
-The API is intentionally unauthenticated and binds only to `127.0.0.1`. Keep it
-on loopback. Upload validation limits requests to 32 YAML files and 2 MB total,
+The API is intentionally unauthenticated by itself. The Ubuntu deployment
+script protects public access with Nginx HTTP Basic Auth and TLS; keep port 8765
+private on loopback. Upload validation limits requests to 32 YAML files and 2 MB total,
 checks UTF-8 and file names, validates task contracts, rejects duplicate YAML
 keys, and scans for common credential patterns. That scan is a guardrail, not a
 complete secret detector; do not put credentials in task input.

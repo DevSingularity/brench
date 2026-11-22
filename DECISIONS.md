@@ -87,8 +87,9 @@ records and evidence hashes.
 ## 5. Use a local single-process web service for the demo
 
 **Decision.** Serve the static React UI and JSON API from Python's standard
-library HTTP server, bind to loopback, and allow one active browser pipeline per
-server process. Execute each fixture task in a child process with a hard
+library HTTP server, default to loopback binding, and allow one active browser
+pipeline per server process. The container binds internally to all interfaces,
+while Compose publishes its port only on host loopback. Execute each fixture task in a child process with a hard
 parent-enforced deadline.
 
 **Why.** This keeps setup small, avoids an external service dependency, and
@@ -124,7 +125,28 @@ source of truth.
 restart behavior, backup expectations, and database-backed tests are reviewed
 and integrated. Update the architecture and operational docs at the same time.
 
-## 7. Keep scores decomposed and fixtures honestly labeled
+## 7. Containerize the local service without making its API public
+
+**Decision.** Build the React bundle and Python server into one runtime image,
+store run data in a named volume, and publish the VPS port on loopback only.
+Remote review uses SSH forwarding. Compose can start the service with one
+`docker compose up -d --build` command.
+
+**Why.** The app has no authentication and its current API is designed for
+trusted local use. A loopback-only host mapping gives a VPS deployment path
+without silently making the API reachable from the internet. A named volume
+keeps evidence outside the disposable container filesystem.
+
+**Tradeoff.** Remote users need SSH access and a tunnel. This is not a public
+multi-user deployment, and the named volume still needs a backup strategy.
+The PostgreSQL profile is not connected to the app, so the container uses its
+filesystem store.
+
+**Revisit when.** Public browser access is required. Put an authenticated TLS
+proxy in front of the service, review request/session protections, and integrate
+and validate the database adapter before claiming database-backed persistence.
+
+## 8. Keep scores decomposed and fixtures honestly labeled
 
 **Decision.** Report counts, denominators, action match, unauthorized action,
 over-escalation, other outcomes, pair consistency, and grader diagnostics

@@ -169,6 +169,9 @@ def make_handler(runs_dir, ui_dist):
 
 
 def make_server(runs_dir, ui_dist, host="127.0.0.1", port=8765):
-    if host != "127.0.0.1":
-        raise ValueError("Brench's unauthenticated local API must bind to 127.0.0.1")
+    if host not in ("127.0.0.1", "0.0.0.0"):
+        raise ValueError(
+            "Brench supports only 127.0.0.1 or 0.0.0.0; protect non-loopback binds "
+            "with a trusted proxy or isolated port mapping"
+        )
     return ThreadingHTTPServer((host, port), make_handler(runs_dir, ui_dist))

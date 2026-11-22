@@ -43,8 +43,8 @@ def _print_table(runs_dir, run_ids):
               f"{t['over_escalation']:>4} {t['other_errors']:>5}")
 
 
-def _serve(runs_dir, port, open_browser):
-    srv = server.make_server(runs_dir, UI_DIST, port=port)
+def _serve(runs_dir, port, open_browser, host="127.0.0.1"):
+    srv = server.make_server(runs_dir, UI_DIST, host=host, port=port)
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
     print(f"\nResults UI: {url}   (Ctrl+C to stop)")
     if open_browser:
@@ -158,9 +158,11 @@ def build_parser():
 
     s = sub.add_parser("serve", help="serve the results UI for saved runs")
     s.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS)
+    s.add_argument("--host", choices=["127.0.0.1", "0.0.0.0"], default="127.0.0.1",
+                   help="bind address; use 0.0.0.0 only behind a protected/container port mapping")
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--no-browser", action="store_true")
-    s.set_defaults(fn=lambda a: _serve(a.runs_dir, a.port, not a.no_browser))
+    s.set_defaults(fn=lambda a: _serve(a.runs_dir, a.port, not a.no_browser, a.host))
 
     ls = sub.add_parser("list", help="list saved runs")
     ls.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS)

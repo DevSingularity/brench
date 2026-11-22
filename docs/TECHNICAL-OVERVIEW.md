@@ -48,7 +48,7 @@ flowchart LR
 | `harness/persistence/batch.py` | Orchestrates run metadata, per-task execution, grading, evidence writes, and partial failure/cancellation status. |
 | `harness/persistence/store.py` and `report.py` | Implements file-backed evidence access and builds summaries, matrices, pair metrics, and task detail. |
 | `harness/web/pipeline.py` | Validates browser submissions, stores job state/events and retry inputs, runs a bounded browser job, and reconstructs job status from saved evidence. |
-| `harness/web/server.py` | Serves the UI bundle and local JSON API using `ThreadingHTTPServer`. It refuses non-loopback binding. |
+| `harness/web/server.py` | Serves the UI bundle and local JSON API using `ThreadingHTTPServer`. It defaults to loopback binding; container deployment explicitly binds internally to all interfaces behind a loopback-only host port mapping. |
 | `ui/src/` | React landing page, workspace, run matrix, task selection, evidence inspector, and pipeline progress UI; `ui/dist/` is served by Python. |
 
 ## Task visibility and trust boundaries
@@ -174,8 +174,9 @@ reviewer to check file identity.
 
 ## HTTP API and browser jobs
 
-The server binds to `127.0.0.1` and serves `ui/dist/` plus these same-origin
-routes:
+By default the server binds to `127.0.0.1`; the container command opts into
+`0.0.0.0` behind Compose's loopback-only host port mapping. It serves `ui/dist/`
+plus these same-origin routes:
 
 | Method and path | Purpose |
 |---|---|
@@ -223,12 +224,32 @@ pnpm build
 
 The build output is committed because the Python server serves it directly.
 
+## Container deployment
+
+The root `Dockerfile` is a multi-stage build. A Node 22 Alpine stage installs
+locked pnpm dependencies and builds `ui/dist`; a Python 3.12 slim stage installs
+runtime requirements and copies the harness, tasks, examples, and built UI. The
+runtime drops root privileges and starts the standard server on port 8765.
+
+The Compose `app` service publishes only `127.0.0.1:${BRENCH_PORT:-8765}` on
+the VPS host and mounts the named `brench-runs` volume at `/app/runs`. Its
+healthcheck calls `/api/health`. The app listens on all interfaces inside its
+container because Docker forwards traffic to the container address; the host
+port mapping remains loopback-only. On a VPS, reach the service through an SSH
+local-forward. `docker compose down` preserves the named volume;
+`docker compose down -v` removes it and its saved runs.
+
+Run from a checkout with `docker compose up -d --build`. The image rebuilds the
+frontend itself, so deployment does not depend on a pre-existing `ui/dist` or
+Node installation on the VPS. The `database` Compose profile is optional and
+does not participate in app persistence on this branch.
+
 ## Local database service
 
 `docker-compose.yml` starts only `postgres:16-alpine`, publishes the database
 on the host port `${POSTGRES_PORT:-5432}` to container port 5432, and stores
-PostgreSQL data in a named Docker volume. The Compose port mapping does not
-restrict the host address to loopback. This is currently a development service
+PostgreSQL data in a named Docker volume. Both Compose host port mappings are
+restricted to loopback. This is currently a development service
 only. There is no application database adapter on main, no app schema migration,
 and no route or CLI path that reads or writes run evidence through PostgreSQL.
 `docker compose up` must not be described as enabling database persistence for
