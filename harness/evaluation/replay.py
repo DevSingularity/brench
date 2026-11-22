@@ -3,6 +3,7 @@
 The source run is left untouched. The trajectory and task snapshot are copied
 byte-for-byte into a new run; only verdict.json and the run metadata differ.
 """
+import hashlib
 import shutil
 from datetime import datetime, timezone
 
@@ -34,11 +35,16 @@ def regrade_run(src_run_id, grader_name, *, runs_dir, new_run_id=None):
     dst = store.run_dir(runs_dir, new_run_id)
     dst.mkdir(parents=True, exist_ok=False)
     ids = []
+    evidence_hashes = {}
     for tid in store.task_ids(runs_dir, src_run_id):
         sdir, ddir = src / tid, dst / tid
         ddir.mkdir(parents=True)
         shutil.copyfile(sdir / "task.yaml", ddir / "task.yaml")
         shutil.copyfile(sdir / "trajectory.jsonl", ddir / "trajectory.jsonl")
+        evidence_hashes[tid] = {
+            "task_sha256": hashlib.sha256((sdir / "task.yaml").read_bytes()).hexdigest(),
+            "trajectory_sha256": hashlib.sha256((sdir / "trajectory.jsonl").read_bytes()).hexdigest(),
+        }
         task = yaml.safe_load((sdir / "task.yaml").read_text(encoding="utf-8"))
         trajectory = store.read_jsonl(sdir / "trajectory.jsonl")
         verdict = grade(task, trajectory, model=meta["model"], run_id=new_run_id, seed=meta.get("seed"))
@@ -49,6 +55,7 @@ def regrade_run(src_run_id, grader_name, *, runs_dir, new_run_id=None):
     new_meta = {**meta, "run_id": new_run_id, "kind": "replay", "grader": grader_name,
                 "grader_version": graders.VERSIONS[grader_name], "task_ids": ids,
                 "replay_of": src_run_id, "harness_version": __version__,
+                "evidence_hashes": evidence_hashes,
                 "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "note": f"Saved traces of {src_run_id} re-graded with {grader_name}; no agent was run."}
     store.write_run_meta(runs_dir, new_run_id, new_meta)

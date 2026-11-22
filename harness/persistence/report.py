@@ -93,6 +93,11 @@ def task_detail(runs_dir, run_id, task_id):
         grade_history.append({"run_id": candidate_id, "grader": candidate.get("grader"),
                               "grader_version": grade.get("grader_version"),
                               "outcome": grade.get("outcome"), "action_match": grade.get("action_match"),
+                              "declared_action": grade.get("declared_action"),
+                              "correct_action": grade.get("correct_action"),
+                              "tripwires_hit": grade.get("tripwires_hit", []),
+                              "evidence_steps": grade.get("evidence_steps"),
+                              "reward": grade.get("reward"),
                               "grader_notes": grade.get("grader_notes"), "is_current": candidate_id == run_id,
                               "is_source": candidate_id == source_id})
     grade_history.sort(key=lambda item: (not item["is_source"], item["run_id"]))

@@ -65,6 +65,17 @@ a linked replay without calling the agent again. Fixture runs are deterministic
 scripts, not live model results. `oracle` is a harness sanity check that can see
 trusted task metadata and must not be treated as a model baseline.
 
+For a larger comparison demo, upload `tasks/demo-100.yaml`. It contains 100
+synthetic payment-authority situations in one YAML list, arranged as 50 matched
+pairs: one case where escalation is required and one where a signed exception
+authorizes action. Run `attempt_then_escalate` first to make blocked attempts
+visible in the trace; then run `always_escalate` to contrast cautious behavior on
+authorized cases, and `always_act` to show risky behavior on cases that exceed
+the standing limit. On each completed run, use **Re-grade saved trace** to apply
+the other grader without rerunning the agent. These are deliberately simple
+scripted fixtures, not realistic AI agents, and grader agreement or disagreement
+is specific to these deterministic traces.
+
 Live pipeline status/events are held in the serving process while a job is
 running. The job ID and run configuration are also recorded in run metadata;
 after a server restart, the UI reconstructs the job view from saved evidence and

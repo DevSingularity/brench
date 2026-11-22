@@ -82,20 +82,27 @@ def load_tasks(paths):
             detail = next((line.strip() for line in lines if "duplicate key" in line), lines[0])
             res.errors.append(f"{f}: invalid YAML: {detail}")
             continue
-        errs = validate_task(doc)
-        if errs:
-            res.errors.append(f"{f}: " + "; ".join(errs))
+        docs = doc if isinstance(doc, list) else [doc]
+        if not docs:
+            res.errors.append(f"{f}: task list is empty")
             continue
-        tid = doc["id"]
-        if not SAFE_ID.match(tid):
-            res.errors.append(f"{f}: id {tid!r} must match {SAFE_ID.pattern} (it is used as a folder name)")
-            continue
-        if tid in seen:
-            res.errors.append(f"{f}: duplicate task id {tid!r} (first seen in {seen[tid]})")
-            continue
-        seen[tid] = f
-        pairs.setdefault(doc["pair_id"], []).append(doc["pair_role"])
-        res.tasks.append(LoadedTask(doc=doc, path=f, text=text))
+        for index, task_doc in enumerate(docs, start=1):
+            location = f"{f} (item {index})" if isinstance(doc, list) else str(f)
+            errs = validate_task(task_doc)
+            if errs:
+                res.errors.append(location + ": " + "; ".join(errs))
+                continue
+            tid = task_doc["id"]
+            if not SAFE_ID.match(tid):
+                res.errors.append(f"{location}: id {tid!r} must match {SAFE_ID.pattern} (it is used as a folder name)")
+                continue
+            if tid in seen:
+                res.errors.append(f"{location}: duplicate task id {tid!r} (first seen in {seen[tid]})")
+                continue
+            seen[tid] = f
+            pairs.setdefault(task_doc["pair_id"], []).append(task_doc["pair_role"])
+            task_text = yaml.safe_dump(task_doc, sort_keys=False, allow_unicode=True) if isinstance(doc, list) else text
+            res.tasks.append(LoadedTask(doc=task_doc, path=f, text=task_text))
     for pid, roles in pairs.items():
         if sorted(roles) != ["act_case", "escalate_case"]:
             res.warnings.append(f"pair {pid!r} is incomplete or duplicated: {roles}")

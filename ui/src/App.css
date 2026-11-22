@@ -453,6 +453,10 @@
 .grade-history-item.current{border-color:#315a40;box-shadow:inset 3px 0 #315a40}
 .grade-history-item>span{color:var(--muted-foreground);font-size:10px}
 .grade-history-item>strong{font-size:12px;overflow-wrap:anywhere}
+.grade-history-item dl{display:grid;grid-template-columns:minmax(95px,.75fr) minmax(0,1.25fr);gap:4px 8px;width:100%;margin:2px 0;font-size:10px}
+.grade-history-item dt{color:var(--muted-foreground)}
+.grade-history-item dd{margin:0;overflow-wrap:anywhere;font-weight:550}
+.grade-history-item .grade-open{margin-top:auto;padding-top:5px;color:#315a40;font-size:10px}
 .trace-card .diagnostic-grid{margin-bottom:12px}
 .workspace-loading{min-height:45vh;display:grid;place-items:center}
 @media(max-width:1100px){
