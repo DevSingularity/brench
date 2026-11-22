@@ -7,7 +7,9 @@ tripwire rules, escalation requirements or unrevealed context.
 import copy
 import json
 import math
+import multiprocessing
 import threading
+import time
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -152,3 +154,47 @@ def run_task(task, agent, *, max_steps=20, timeout_s=30.0, on_record=None):
         else:
             return finish("model_error", f"Agent returned an unknown action type: {type(action).__name__}.")
     return finish("step_budget", f"Step budget of {max_steps} agent steps exhausted without a decision.")
+
+
+def _isolated_task_worker(conn, task, agent, max_steps, timeout_s):
+    try:
+        result = run_task(task, agent, max_steps=max_steps, timeout_s=timeout_s,
+                          on_record=lambda record: conn.send(("record", record)))
+        conn.send(("result", result))
+    except BaseException as exc:
+        conn.send(("error", type(exc).__name__, str(exc)))
+    finally:
+        conn.close()
+
+
+def run_task_isolated(task, agent, *, max_steps=20, timeout_s=30.0, on_record=None):
+    """Execute a task in a killable child process and stream records to the parent."""
+    ctx = multiprocessing.get_context("spawn")
+    recv, send = ctx.Pipe(duplex=False)
+    process = ctx.Process(target=_isolated_task_worker,
+                          args=(send, task, agent, max_steps, timeout_s), daemon=True)
+    process.start()
+    send.close()
+    deadline = time.monotonic() + timeout_s + 1.0
+    try:
+        while time.monotonic() < deadline:
+            if recv.poll(0.05):
+                message = recv.recv()
+                if message[0] == "record":
+                    if on_record:
+                        on_record(message[1])
+                elif message[0] == "result":
+                    process.join(timeout=0.2)
+                    return message[1]
+                else:
+                    raise RuntimeError(f"isolated task worker {message[1]}: {message[2]}")
+            elif not process.is_alive():
+                break
+        process.terminate()
+        process.join(timeout=1)
+        raise TimeoutError(f"isolated task worker exceeded {timeout_s + 1:g}s hard deadline")
+    finally:
+        recv.close()
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=1)

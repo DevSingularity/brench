@@ -6,15 +6,19 @@ from pathlib import Path
 
 from .. import __version__
 from ..core.agents import make_agent
-from ..core.runner import run_task
+from ..core.runner import run_task_isolated
 from ..evaluation import graders
 from . import store
+
+
+class BatchCancelled(Exception):
+    pass
 
 FIXTURE_NOTE = "Scripted fixture agent. Not a live model; results say nothing about any real model."
 
 
 def run_batch(loaded_tasks, agent_name, *, runs_dir, run_id=None, seed=0, grader=graders.DEFAULT,
-              max_steps=20, timeout_s=30.0, on_event=None, source_labels=None, job_id=None):
+              max_steps=20, timeout_s=30.0, on_event=None, source_labels=None, job_id=None, should_cancel=None):
     grade = graders.get(grader)
     base_run_id = run_id or f"{agent_name}-seed{seed}"
     if run_id is not None:
@@ -47,12 +51,14 @@ def run_batch(loaded_tasks, agent_name, *, runs_dir, run_id=None, seed=0, grader
     store.write_run_meta(runs_dir, run_id, meta)
     try:
         for lt in loaded_tasks:
+            if should_cancel and should_cancel():
+                raise BatchCancelled("Evaluation cancelled between tasks; completed task evidence was preserved.")
             task = lt.doc
             agent = make_agent(agent_name, task)
             if on_event:
                 on_event({"type": "task_started", "stage": "running", "task_id": task["id"],
                           "message": "Fixture agent is running against mock tools."})
-            result = run_task(task, agent, max_steps=max_steps, timeout_s=timeout_s,
+            result = run_task_isolated(task, agent, max_steps=max_steps, timeout_s=timeout_s,
                               on_record=(lambda record, tid=task["id"]: on_event({"type": "trace_record", "task_id": tid,
                                                                                  "record": record})) if on_event else None)
             if on_event:
@@ -74,7 +80,8 @@ def run_batch(loaded_tasks, agent_name, *, runs_dir, run_id=None, seed=0, grader
                 on_event({"type": "task_graded", "task_id": task["id"], "outcome": verdict["outcome"],
                           "grader_version": verdict["grader_version"]})
     except BaseException as exc:
-        meta.update(status="failed", error=f"{type(exc).__name__}: {exc}", task_ids=list(ids),
+        meta.update(status="cancelled" if isinstance(exc, BatchCancelled) else "failed",
+                    error=f"{type(exc).__name__}: {exc}", task_ids=list(ids),
                     finished=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
         store.write_run_meta(runs_dir, run_id, meta)
         raise

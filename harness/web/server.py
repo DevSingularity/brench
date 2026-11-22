@@ -21,6 +21,7 @@ ROUTES = [
     ("GET", re.compile(r"^/api/graders$"), "graders"),
     ("GET", re.compile(r"^/api/agents$"), "agents"),
     ("GET", re.compile(r"^/api/jobs/([^/]+)$"), "job"),
+    ("POST", re.compile(r"^/api/jobs/([^/]+)/(cancel|retry)$"), "job_action"),
     ("GET", re.compile(r"^/api/runs$"), "runs"),
     ("GET", re.compile(r"^/api/runs/([^/]+)$"), "run"),
     ("GET", re.compile(r"^/api/runs/([^/]+)/tasks/([^/]+)$"), "task"),
@@ -93,6 +94,10 @@ def make_handler(runs_dir, ui_dist):
                 return self._json(200, {"runs": [report.run_summary(runs_dir, r) for r in store.list_run_ids(runs_dir)]})
             if name == "job":
                 return self._json(200, jobs.get(args[0]))
+            if name == "job_action":
+                action = args[1]
+                result = jobs.cancel(args[0]) if action == "cancel" else jobs.retry(args[0])
+                return self._json(202, result)
             if name == "run":
                 store.safe(args[0])
                 return self._json(200, report.run_detail(runs_dir, args[0]))

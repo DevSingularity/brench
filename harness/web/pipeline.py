@@ -64,8 +64,15 @@ class PipelineJobs:
     """In-process bounded-by-one local job registry; evidence itself stays in the run store."""
     def __init__(self, runs_dir):
         self.runs_dir = Path(runs_dir)
+        self.jobs_dir = self.runs_dir / ".pipeline-jobs"
+        self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._jobs = {}
+        self._cancel = {}
+
+    def _save(self, job):
+        path = self.jobs_dir / f"{job['job_id']}.json"
+        store._write_json(path, {k: v for k, v in job.items() if k != "input_files"})
 
     def create(self, payload):
         files = _validated_files(payload.get("files"))
@@ -99,11 +106,14 @@ class PipelineJobs:
         job = {"job_id": uuid.uuid4().hex, "run_id": run_id, "status": "queued", "stage": "queued",
                "created": datetime.now(timezone.utc).isoformat(), "config": {"agent": agent, "grader": grader,
                "seed": seed, "max_steps": max_steps, "timeout_s": timeout_s, "task_ids": [x["id"] for x in validation["tasks"]]},
-               "events": [], "error": None}
+               "events": [], "error": None, "input_files": files}
         with self._lock:
-            if any(existing["status"] in ("queued", "running") for existing in self._jobs.values()):
+            if any(existing["status"] in ("queued", "running", "cancelling") for existing in self._jobs.values()):
                 raise ValueError("A pipeline is already running. Wait for it to finish before starting another.")
             self._jobs[job["job_id"]] = job
+            self._cancel[job["job_id"]] = threading.Event()
+            store._write_json(self.jobs_dir / f"{job['job_id']}.input.json", files)
+            self._save(job)
         threading.Thread(target=self._run, args=(job["job_id"], files), daemon=True).start()
         return self.get(job["job_id"])
 
@@ -114,6 +124,7 @@ class PipelineJobs:
             job["events"].append(event)
             if event.get("stage"):
                 job["stage"] = event["stage"]
+            self._save(job)
 
     def _run(self, job_id, files):
         with self._lock:
@@ -130,11 +141,14 @@ class PipelineJobs:
                 self._emit(job_id, {"stage": "validated", "message": f"Validated {len(loaded.tasks)} task(s)."})
                 self._emit(job_id, {"stage": "dispatching", "message": "Starting scripted fixture agent(s)."})
                 config = job["config"]
+                if self._cancel[job_id].is_set():
+                    raise batch.BatchCancelled("Evaluation cancelled before the first task started.")
                 self._emit(job_id, {"stage": "running", "message": "Running mock tools and recording the trace."})
                 rid = batch.run_batch(loaded.tasks, config["agent"], runs_dir=self.runs_dir, run_id=job["run_id"],
                                       seed=config["seed"], grader=config["grader"], max_steps=config["max_steps"],
                                       timeout_s=config["timeout_s"], on_event=lambda e: self._emit(job_id, e),
-                                      source_labels={t.doc["id"]: t.path.name for t in loaded.tasks}, job_id=job_id)
+                                      source_labels={t.doc["id"]: t.path.name for t in loaded.tasks}, job_id=job_id,
+                                      should_cancel=self._cancel[job_id].is_set)
             summary = report.run_summary(self.runs_dir, rid)
             with self._lock:
                 job["status"] = "completed"
@@ -148,18 +162,63 @@ class PipelineJobs:
             except (OSError, ValueError, KeyError):
                 pass
             with self._lock:
-                job["status"] = "failed"
-                job["stage"] = "failed"
+                cancelled = self._cancel.get(job_id) and self._cancel[job_id].is_set()
+                job["status"] = "cancelled" if cancelled else "failed"
+                job["stage"] = job["status"]
                 job["error"] = f"{type(exc).__name__}: {exc}"
                 job["partial_summary"] = partial_summary
-            self._emit(job_id, {"stage": "failed", "message": str(exc)})
+            self._emit(job_id, {"stage": job["stage"], "message": str(exc)})
 
     def get(self, job_id):
         with self._lock:
             import copy
             if job_id in self._jobs:
-                return copy.deepcopy(self._jobs[job_id])
+                public = copy.deepcopy(self._jobs[job_id])
+                public.pop("input_files", None)
+                return public
+        saved = self.jobs_dir / f"{job_id}.json"
+        if saved.is_file():
+            job = store.read_json(saved)
+            if job.get("status") in ("queued", "running"):
+                job.update(status="interrupted", stage="interrupted",
+                           error="Server stopped before this evaluation finished. Saved task evidence is available; retry creates a new run.")
+                self._save(job)
+                run_meta_path = store.run_dir(self.runs_dir, job["run_id"]) / "meta.json"
+                if run_meta_path.is_file():
+                    meta = store.read_json(run_meta_path)
+                    meta.update(status="interrupted", error=job["error"])
+                    store.write_run_meta(self.runs_dir, job["run_id"], meta)
+            run_dir = store.run_dir(self.runs_dir, job["run_id"])
+            if (run_dir / "meta.json").is_file() and job.get("status") in ("interrupted", "failed", "cancelled"):
+                job["partial_summary"] = report.run_summary(self.runs_dir, job["run_id"])
+            job.pop("input_files", None)
+            return job
         return self._recover(job_id)
+
+    def cancel(self, job_id):
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                raise ValueError("Only jobs running in this server process can be cancelled.")
+            if job["status"] not in ("queued", "running"):
+                raise ValueError(f"Cannot cancel a {job['status']} job.")
+            self._cancel[job_id].set()
+            job["status"] = "cancelling"
+            job["stage"] = "cancelling"
+            self._save(job)
+        self._emit(job_id, {"stage": "cancelling", "message": "Cancellation requested; the current task will finish or reach its timeout, then the batch stops."})
+        return self.get(job_id)
+
+    def retry(self, job_id):
+        saved = self.jobs_dir / f"{job_id}.json"
+        if not saved.is_file():
+            raise FileNotFoundError(f"pipeline job {job_id!r} not found")
+        job = store.read_json(saved)
+        input_path = self.jobs_dir / f"{job_id}.input.json"
+        if not input_path.is_file():
+            raise ValueError("Original task files are unavailable for retry.")
+        files = store.read_json(input_path)
+        return self.create({**job["config"], "files": files})
 
     def _recover(self, job_id):
         meta = None

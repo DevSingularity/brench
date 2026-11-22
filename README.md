@@ -37,6 +37,91 @@ How this repo maps to that flow:
 The step-by-step demo script with defence notes for each decision is in
 `docs/plans/WALKTHROUGH.md`.
 
+## Current architecture
+
+Brench is a local, single-process Python application with a static React
+frontend. The standard-library HTTP server serves both `ui/dist/` and the JSON
+API from `127.0.0.1:8765`. In the browser workflow, the server validates
+uploaded task YAML, starts one in-process pipeline job, and reports progress
+through a polled job endpoint. The CLI can also run batches, import traces,
+re-grade runs, and start the same UI server.
+
+During an evaluation, the runner gives a scripted fixture agent only the
+allow-listed task observation. The agent interacts with a simulated tool
+environment; tripwires can block tool effects while preserving the attempt in
+the trace. The selected deterministic grader evaluates that trace, and the
+batch runner saves the task snapshot, trajectory, verdict, and metadata under
+`runs/<run_id>/`. The API builds run summaries and task detail views from those
+saved files. Re-grading copies the task snapshot and trajectory into a new run
+and writes a new verdict without invoking the agent.
+
+```mermaid
+flowchart LR
+    User[User]
+    CLI[CLI: python -m harness]
+
+    subgraph Client[Browser]
+        UI[React UI]
+    end
+
+    subgraph App[Local Brench process]
+        HTTP[Stdlib HTTP server<br/>JSON API + static UI]
+        Jobs[PipelineJobs<br/>in-process, one active run]
+        Load[Task loader<br/>YAML contract validation]
+        Batch[Batch orchestrator]
+        Runner[Core runner]
+        Agent[Scripted fixture agent]
+        Env[Mock tool environment<br/>tripwire checks]
+        Grader[Deterministic grader<br/>strict or reference]
+        Replay[Trace replay / re-grade]
+        Importer[External trace importer]
+        Reports[Report aggregation]
+    end
+
+    subgraph Disk[Local filesystem]
+        Tasks[tasks/*.yaml\nor uploaded YAML]
+        Runs[runs/{run_id}/<br/>task snapshots · trajectories<br/>verdicts · metadata]
+        UIAssets[ui/dist assets]
+    end
+
+    User --> UI
+    UI -->|API requests and job polling| HTTP
+    UIAssets -->|static files| HTTP
+    HTTP -->|HTML, CSS and JavaScript| UI
+    HTTP -->|create evaluation| Jobs
+    Jobs --> Batch
+    CLI -->|serve UI| HTTP
+    CLI -->|run batch| Batch
+    CLI -->|re-grade| Replay
+    CLI -->|import trace| Importer
+    Batch --> Load
+    Tasks --> Load
+    Load --> Runner
+    Runner <--> Agent
+    Runner <--> Env
+    Runner -->|trajectory| Batch
+    Batch --> Grader
+    Grader -->|verdict| Batch
+    Batch -->|persist each completed task| Runs
+    HTTP --> Reports
+    Runs --> Reports
+    Reports -->|summaries and evidence| HTTP
+    HTTP -->|re-grade request| Replay
+    Runs -->|saved trace + task snapshot| Replay
+    Replay --> Grader
+    Replay -->|new linked run; source unchanged| Runs
+    Tasks --> Importer
+    Importer --> Grader
+    Importer -->|imported task evidence| Runs
+```
+
+`docker-compose.yml` currently defines an optional local PostgreSQL 16
+container, but the harness does not connect to it: evaluation state and
+evidence are file-backed under `runs/`. Live job events are held in process
+memory and also checkpointed as job metadata; after a restart the UI rebuilds
+the job view from the saved run evidence, so unpersisted live events are not
+recoverable.
+
 ## Run the offline demo
 
 Python 3.10+ and PyYAML are the only runtime requirements. The compiled React
@@ -76,13 +161,13 @@ the other grader without rerunning the agent. These are deliberately simple
 scripted fixtures, not realistic AI agents, and grader agreement or disagreement
 is specific to these deterministic traces.
 
-Live pipeline status/events are held in the serving process while a job is
-running. The job ID and run configuration are also recorded in run metadata;
-after a server restart, the UI reconstructs the job view from saved evidence and
-marks an unfinished run interrupted. Task snapshots, trajectories, verdicts and
-run metadata are stored under `runs/` as each task completes; a failed batch
-keeps its completed task evidence and records a failed run status. Keep the
-server bound to loopback for local use.
+Pipeline job state and ordered events are persisted under `runs/.pipeline-jobs/`;
+uploaded inputs are stored separately there so a failed or interrupted job can
+be retried as a new immutable run. Cancellation stops between tasks, allowing
+the current task to finish or hit its timeout. Each task runs in a child process
+so the hard timeout can terminate a stuck fixture. Task snapshots, trajectories,
+verdicts and run metadata are stored under `runs/` as each task completes. Keep
+the server bound to loopback for local use.
 
 Useful commands:
 

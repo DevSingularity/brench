@@ -365,6 +365,16 @@
 .section-heading p{margin:5px 0 0;color:var(--muted-foreground);font-size:13px}
 .section-heading .text-link{margin:0}
 .runs-table-wrap{overflow:auto;border:1px solid var(--border);border-radius:9px;background:#fff}
+.run-filters{display:grid;grid-template-columns:minmax(200px,1fr) 170px 170px;gap:9px;margin:12px 0}
+.run-filters input{height:36px;padding:0 11px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--foreground);font:12px var(--sans)}
+.runs-table input[type=checkbox]{accent-color:#315a40}
+.run-comparison{margin:12px 0}
+.comparison-grid{display:grid;grid-template-columns:minmax(130px,.8fr) repeat(2,minmax(190px,1fr));gap:8px}
+.comparison-grid>div{display:grid;grid-template-rows:36px repeat(5,minmax(27px,auto));gap:5px;min-width:0}
+.comparison-grid>div>*{display:flex;align-items:center;margin:0;padding:5px 8px;border-bottom:1px solid #eeeef0;font-size:11px;overflow-wrap:anywhere}
+.comparison-grid>div>a{color:#315a40;font-weight:600}
+.comparison-grid>div>small{color:var(--muted-foreground)}
+.comparison-grid>div>b{font:12px var(--mono)}
 .runs-table{width:100%;min-width:850px;table-layout:fixed;border-collapse:collapse;text-align:left}
 .runs-table th:nth-child(1){width:25%}.runs-table th:nth-child(2){width:9%}.runs-table th:nth-child(3){width:15%}.runs-table th:nth-child(4){width:11%}.runs-table th:nth-child(5){width:7%}.runs-table th:nth-child(6){width:14%}.runs-table th:nth-child(7){width:10%}.runs-table th:nth-child(8){width:9%}
 .runs-table th{height:42px;padding:0 13px;border-bottom:1px solid var(--border);background:#fafafa;color:var(--muted-foreground);font-size:11px;font-weight:600;letter-spacing:.025em;white-space:nowrap}
@@ -466,6 +476,9 @@
   .run-page-grid{grid-template-columns:minmax(0,1fr) minmax(265px,.8fr)}
 }
 @media(max-width:760px){
+  .run-filters{grid-template-columns:1fr 1fr}
+  .run-filters input{grid-column:1/-1}
+  .comparison-grid{grid-template-columns:100px repeat(2,minmax(160px,1fr));overflow-x:auto}
   .mobile-table-hint{display:block}
   .dashboard-metrics,.run-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
   .run-page-grid{grid-template-columns:1fr}

@@ -49,7 +49,7 @@ function outcomeVariant(outcome = '') {
 }
 function runStatusVariant(status = '') {
   if (status === 'failed' || status === 'interrupted') return 'destructive'
-  if (status === 'running' || status === 'queued') return 'warning'
+  if (status === 'running' || status === 'queued' || status === 'cancelling') return 'warning'
   return 'outline'
 }
 function prettyDate(value) {
@@ -92,6 +92,10 @@ function WorkspaceShell({ active, children, headerAction }) {
 
 function Dashboard() {
   const [runs, setRuns] = useState([])
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [kindFilter, setKindFilter] = useState('all')
+  const [compareIds, setCompareIds] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   useEffect(() => { getJson('/api/runs').then(({ runs: data }) => setRuns(data)).catch((err) => setError(err.message)).finally(() => setLoading(false)) }, [])
@@ -105,10 +109,15 @@ function Dashboard() {
     return all
     }, { tasks: 0, correct: 0, unauthorised: 0, over: 0, outcomes: {} })
     return { ...aggregate, runs: runs.length,
-      running: runs.filter((run) => ['running', 'queued'].includes(run.status)).length,
-      failed: runs.filter((run) => ['failed', 'interrupted'].includes(run.status)).length }
+      running: runs.filter((run) => ['running', 'queued', 'cancelling'].includes(run.status)).length,
+      failed: runs.filter((run) => ['failed', 'interrupted', 'cancelled'].includes(run.status)).length }
   }, [runs])
-  const recent = [...runs].sort((a, b) => (b.created || '').localeCompare(a.created || '')).slice(0, 8)
+  const recent = [...runs].sort((a, b) => (b.created || '').localeCompare(a.created || ''))
+  const filteredRuns = recent.filter((run) => {
+    const matchesText = `${run.run_id} ${run.model || ''} ${run.grader_version || ''}`.toLowerCase().includes(query.toLowerCase())
+    return matchesText && (statusFilter === 'all' || (run.status || 'completed') === statusFilter) && (kindFilter === 'all' || run.kind === kindFilter)
+  })
+  const comparedRuns = compareIds.map((id) => runs.find((run) => run.run_id === id)).filter(Boolean)
   const maxOutcome = Math.max(1, ...Object.values(totals.outcomes))
   return <WorkspaceShell active="dashboard" headerAction={<Button onClick={() => navigate('#/runs/new')}>New evaluation</Button>}>
     <div className="page-heading"><div><h1>Evaluation dashboard</h1><p>One view across your saved fixture runs, coverage and outcomes.</p></div></div>
@@ -117,7 +126,10 @@ function Dashboard() {
       <section className="dashboard-metrics" aria-label="Workspace summary"><MetricCard label="Evaluation runs" value={totals.runs} note={`${totals.running} running · ${totals.failed} failed`}/><MetricCard label="Tasks evaluated" value={totals.tasks} note="Saved task verdicts"/><MetricCard label="Correct outcomes" value={totals.correct} note={totals.tasks ? `${Math.round(100 * totals.correct / totals.tasks)}% of evaluated tasks` : 'No task results yet'}/><MetricCard label="Authority violations" value={totals.unauthorised} note={`${totals.over} over-escalations recorded`} tone={totals.unauthorised ? 'destructive' : ''}/></section>
       <div className="dashboard-columns"><Card className="outcome-card dashboard-outcomes"><CardHeader><div><CardTitle>Outcome distribution</CardTitle><CardDescription>Source runs only; re-grades are excluded to avoid counting a trace twice.</CardDescription></div></CardHeader><CardContent><div className="dashboard-bars">{Object.entries(OUTCOMES).map(([key, label]) => { const count = totals.outcomes[key] || 0; return <div className="dashboard-bar-row" key={key}><span>{label}</span><div className="bar-track"><i className={key === 'unauthorised_action' ? 'bar-danger' : key === 'over_escalation' ? 'bar-warning' : ''} style={{ width: `${100 * count / maxOutcome}%` }}/></div><strong>{count}</strong></div> })}</div></CardContent></Card>
         <Card className="coverage-card"><CardHeader><div><CardTitle>Workspace status</CardTitle><CardDescription>Current evidence and follow-up.</CardDescription></div></CardHeader><CardContent><div className="status-summary"><strong>{totals.tasks}</strong><span>saved task verdicts</span></div><div className="status-line"><span>Fixture runs</span><b>{runs.filter((run) => run.kind === 'fixture').length}</b></div><div className="status-line"><span>Re-grades</span><b>{runs.filter((run) => run.kind === 'replay').length}</b></div><div className="status-line"><span>Runs with violations</span><b>{runs.filter((run) => run.totals?.unauthorised).length}</b></div><a className="text-link" href="#runs">Browse all evaluation runs →</a></CardContent></Card></div>
-      <section className="runs-section" id="runs"><div className="section-heading"><div><h2>Recent evaluation runs</h2><p>Each run has its own page with configuration, outcomes and complete evidence.</p></div><a href="#runs" className="text-link">{runs.length} total</a></div><RunTable runs={recent}/></section>
+      <section className="runs-section" id="runs"><div className="section-heading"><div><h2>Run history</h2><p>Search and filter runs. Select two runs to compare their results.</p></div><span className="text-link">{filteredRuns.length} of {runs.length}</span></div>
+        <div className="run-filters"><input aria-label="Search runs" placeholder="Search run, fixture, or grader…" value={query} onChange={(e) => setQuery(e.target.value)}/><Select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">All statuses</option>{['completed','running','failed','cancelled','interrupted'].map((x) => <option key={x} value={x}>{humanize(x)}</option>)}</Select><Select aria-label="Filter by run type" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}><option value="all">All run types</option><option value="fixture">Fixture runs</option><option value="replay">Re-grades</option></Select></div>
+        {comparedRuns.length === 2 && <RunComparison runs={comparedRuns} onClear={() => setCompareIds([])}/>}
+        <RunTable runs={filteredRuns} selectable selected={compareIds} onToggle={(id) => setCompareIds((old) => old.includes(id) ? old.filter((x) => x !== id) : old.length < 2 ? [...old, id] : [old[1], id])}/></section>
     </>}
   </WorkspaceShell>
 }
@@ -126,9 +138,14 @@ function EmptyDashboard() {
   return <section className="empty-dashboard"><div className="empty-flow"><span>01</span><i/><span>02</span><i/><span>03</span></div><h2>Start with a task file</h2><p>Validate the task contract, run a scripted fixture through mock tools, then inspect its trace and verdict here.</p><Button onClick={() => navigate('#/runs/new')}>Create an evaluation</Button><small>Offline execution · no API key · no external side effects</small></section>
 }
 
-function RunTable({ runs }) {
+function RunTable({ runs, selectable = false, selected = [], onToggle = () => {} }) {
   if (!runs.length) return <div className="table-empty">No runs match this view.</div>
-  return <div className="runs-table-wrap"><table className="runs-table"><thead><tr><th>Run</th><th>Source</th><th>Agent / model</th><th>Grader</th><th>Tasks</th><th>Outcomes</th><th>Status</th><th/></tr></thead><tbody>{runs.map((run) => <tr key={run.run_id}><td><a className="run-row-link" href={runHref(run.run_id)}><strong>{run.run_id}</strong><small>{prettyDate(run.created)}</small></a></td><td>{run.kind === 'fixture' ? 'Fixture' : humanize(run.kind || 'run')}</td><td>{run.model || '—'}</td><td>{run.grader_version || '—'}</td><td>{run.totals?.n || 0}{run.expected_task_ids?.length ? ` / ${run.expected_task_ids.length}` : ''}</td><td><span className="run-correct">{run.totals?.correct || 0} correct</span><span className="run-violations">{run.totals?.unauthorised || 0} unauthorised</span></td><td><Badge variant={runStatusVariant(run.status)}>{humanize(run.status || 'completed')}</Badge></td><td><a className="open-run" href={runHref(run.run_id)} aria-label={`Open ${run.run_id}`}>Open →</a></td></tr>)}</tbody></table></div>
+  return <div className="runs-table-wrap"><table className="runs-table"><thead><tr>{selectable && <th>Compare</th>}<th>Run</th><th>Source</th><th>Agent / model</th><th>Grader</th><th>Tasks</th><th>Outcomes</th><th>Status</th><th/></tr></thead><tbody>{runs.map((run) => <tr key={run.run_id}>{selectable && <td><input type="checkbox" aria-label={`Select ${run.run_id} for comparison`} checked={selected.includes(run.run_id)} onChange={() => onToggle(run.run_id)}/></td>}<td><a className="run-row-link" href={runHref(run.run_id)}><strong>{run.run_id}</strong><small>{prettyDate(run.created)}</small></a></td><td>{run.kind === 'fixture' ? 'Fixture' : humanize(run.kind || 'run')}</td><td>{run.model || '—'}</td><td>{run.grader_version || '—'}</td><td>{run.totals?.n || 0}{run.expected_task_ids?.length ? ` / ${run.expected_task_ids.length}` : ''}</td><td><span className="run-correct">{run.totals?.correct || 0} correct</span><span className="run-violations">{run.totals?.unauthorised || 0} unauthorised</span></td><td><Badge variant={runStatusVariant(run.status)}>{humanize(run.status || 'completed')}</Badge></td><td><a className="open-run" href={runHref(run.run_id)} aria-label={`Open ${run.run_id}`}>Open →</a></td></tr>)}</tbody></table></div>
+}
+
+function RunComparison({ runs, onClear }) {
+  const metrics = [['Tasks saved', (r) => r.totals?.n || 0], ['Correct', (r) => r.totals?.correct || 0], ['Unauthorised actions', (r) => r.totals?.unauthorised || 0], ['Over-escalations', (r) => r.totals?.over_escalation || 0], ['Other errors', (r) => r.totals?.other_errors || 0]]
+  return <Card className="run-comparison"><CardHeader className="section-card-header"><div><CardTitle>Run comparison</CardTitle><CardDescription>Compare aggregate outcomes; open a run for task-by-task grader evidence.</CardDescription></div><Button variant="ghost" size="sm" onClick={onClear}>Clear</Button></CardHeader><CardContent><div className="comparison-grid"><div><strong>Measure</strong>{metrics.map(([label]) => <span key={label}>{label}</span>)}</div>{runs.map((run) => <div key={run.run_id}><a href={runHref(run.run_id)}>{run.run_id}</a><small>{run.model} · {run.grader_version}</small>{metrics.map(([label, value]) => <b key={label}>{value(run)}</b>)}</div>)}</div></CardContent></Card>
 }
 
 function RunPage({ runId }) {
@@ -225,12 +242,21 @@ function NewEvaluationPage({ jobId }) {
 function PipelinePanel({ jobId, onDone, onClose }) {
   const [job, setJob] = useState(null)
   const [error, setError] = useState('')
+  const [actionBusy, setActionBusy] = useState(false)
   useEffect(() => {
     let active = true
     async function poll() { try { const value = await getJson(`/api/jobs/${encodeURIComponent(jobId)}`); if (active) { setJob(value); setError('') } } catch (err) { if (active) setError(err.message) } }
     poll(); const timer = window.setInterval(poll, 700)
     return () => { active = false; window.clearInterval(timer) }
   }, [jobId])
+  async function jobAction(action) {
+    setActionBusy(true); setError('')
+    try {
+      const result = await postJson(`/api/jobs/${encodeURIComponent(jobId)}/${action}`, {})
+      if (action === 'retry') navigate(`#/runs/new?job=${encodeURIComponent(result.job_id)}`)
+      else setJob(result)
+    } catch (err) { setError(err.message) } finally { setActionBusy(false) }
+  }
   const current = STAGES.indexOf(job?.stage)
   const taskProgress = (job?.config?.task_ids || []).map((taskId) => {
     const events = (job?.events || []).filter((event) => event.task_id === taskId)
@@ -247,7 +273,8 @@ function PipelinePanel({ jobId, onDone, onClose }) {
     <div className="pipeline-task-progress">{taskProgress.map((item) => <div key={item.taskId}><strong>{item.taskId}</strong><span>{humanize(item.stage)}</span><small>{item.records} trace records</small>{item.outcome && <Badge variant={outcomeVariant(item.outcome)}>{outcomeLabel(item.outcome)}</Badge>}</div>)}</div>
     <div className="pipeline-events" aria-live="polite">{job?.events?.map((event) => <article key={event.sequence} className={event.type === 'trace_record' ? 'pipeline-trace-event' : ''}><time>{new Date(event.at).toLocaleTimeString()}</time>{event.type === 'trace_record' ? <><strong>{event.task_id} · {event.record.type === 'tool_call' ? `Tool call: ${event.record.tool}` : event.record.type === 'tool_result' ? `Tool result: ${event.record.tool}` : event.record.type === 'terminal' ? `Decision: ${event.record.declared_action}` : 'Agent message'}</strong>{event.record.blocked && <Badge variant="destructive">Blocked attempt</Badge>}{event.record.tripwire_hit && <Badge variant="destructive">Tripwire hit</Badge>}<details><summary>Inspect trace record</summary><pre>{JSON.stringify(event.record, null, 2)}</pre></details></> : <><strong>{event.task_id ? `${event.task_id} · ` : ''}{event.message || event.type}</strong>{event.outcome && <Badge variant={outcomeVariant(event.outcome)}>{outcomeLabel(event.outcome)}</Badge>}</>}</article>)}</div>
     {job?.status === 'completed' && <div className="pipeline-finish"><div><strong>Trace saved and graded</strong><span>{job.summary?.totals?.n ?? 0} tasks · {job.summary?.totals?.correct ?? 0} correct · {job.summary?.totals?.unauthorised ?? 0} unauthorised attempts</span></div><Button onClick={() => onDone(job)}>Open run page</Button></div>}
-    {job?.status === 'failed' && <div className="pipeline-finish">{job.partial_summary && <Button onClick={() => onDone({ run_id: job.run_id })}>Inspect saved partial evidence</Button>}<Button variant="outline" onClick={onClose}>Back to dashboard</Button></div>}
+    {['queued','running','cancelling'].includes(job?.status) && <div className="pipeline-finish"><Button variant="outline" disabled={actionBusy || job.status === 'cancelling'} onClick={() => jobAction('cancel')}>{job.status === 'cancelling' ? 'Cancelling after current task…' : 'Cancel after current task'}</Button></div>}
+    {['failed','cancelled','interrupted'].includes(job?.status) && <div className="pipeline-finish">{job.partial_summary && <Button onClick={() => onDone({ run_id: job.run_id })}>Inspect saved partial evidence</Button>}<Button disabled={actionBusy} onClick={() => jobAction('retry')}>{actionBusy ? 'Starting new run…' : 'Retry as a new run'}</Button><Button variant="outline" onClick={onClose}>Back to dashboard</Button></div>}
   </CardContent></Card>
 }
 

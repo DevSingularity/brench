@@ -4,7 +4,9 @@
 **Scope:** Current checkout against `reference/legacy-candidate-pack/TRACK-B-full-stack.md` v1.2 and `SHARED-CONTRACT.md` v1.1.  
 **Purpose:** Record what is implemented, what is missing or misleading, and the product flow needed to make adding a task file and running the complete pipeline understandable in the UI.
 
-> **Review baseline and follow-up:** The critique below records the gaps found before the browser pipeline was implemented. The “Implementation follow-up” section at the end records the work added in the current pass and remaining limitations.
+> **Review baseline and follow-up:** The findings below describe the initial read-only viewer and are retained as the audit trail. The “Implementation follow-up” section records completed work and remaining limitations.
+
+> **Current status update (22 November 2026):** Dashboard run search/type/status filters and two-run aggregate comparison are implemented. Pipeline state/events persist under `runs/.pipeline-jobs/`; cancellation stops after the active task completes or times out, retry creates a new run from saved input, and fixture tasks run in killable child processes. The P0/P1 findings below are historical baseline findings unless explicitly updated in the follow-up.
 
 ## Summary
 
@@ -207,7 +209,9 @@ The browser workflow described above is now implemented in this worktree:
 - **Task intake and validation:** the workspace has a YAML file picker and drop zone, selected-file management, validation results, task summaries and pair warnings. The server reuses `load_tasks` and bounds file count and combined size.
 - **Task visibility preview:** validated tasks can expand to show the exact starting observation sent to the fixture and a separate, labeled view of grader-only fields. The completed inspector also exposes the parsed trusted task and exact saved YAML snapshot.
 - **Run configuration:** users choose a scripted fixture agent, grader, seed, step budget and per-task timeout. The UI calls `POST /api/runs`; the local server validates the input and starts the run in a background thread.
-- **Pipeline view:** `GET /api/jobs/<id>` exposes in-process job status and ordered events. The UI shows stage status, per-task progress, each trace record, grading, persistence and completion. Blocked attempts and tripwire hits are highlighted. Run metadata is written before execution and updated after each saved task, so a failed run remains visible with its partial evidence and failure status.
+- **Pipeline view and recovery:** `GET /api/jobs/<id>` exposes persisted job status and ordered events. The UI shows stage status, per-task progress, each trace record, grading, persistence and completion. Job events and retry inputs are stored under `runs/.pipeline-jobs/`; a server restart marks unfinished jobs interrupted and reconstructs their saved evidence. Retry starts a new run ID.
+- **Cancellation and timeout isolation:** users can request cancellation, which stops between tasks after the current task completes or reaches its timeout. Each task runs in a child process that can be terminated at a hard deadline, containing a stuck fixture agent.
+- **Dashboard discovery and comparison:** run history supports text search plus type/status filters. Users can select two runs to compare aggregate task, correct, unauthorized, over-escalation and other-error counts; task pages retain grader-level detail.
 - **Complete evidence inspection:** the selected run shows provenance, status, expected/saved task counts, all contract outcome counts and pair consistency. Task drill-down includes declared/expected action, grader notes and diagnostics, complete trajectory, initial agent observation, trusted task spec, exact YAML, simulator effects and full run/task metadata.
 - **Re-grading:** the existing replay endpoint is now available from the selected run’s results view. It creates another run from saved traces without calling the fixture agent, and the UI prevents replaying with the same grader or re-grading a replay.
 - **Documentation:** README now describes browser run creation and accurately identifies file-backed evidence storage rather than claiming PostgreSQL persistence.
