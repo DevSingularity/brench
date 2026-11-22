@@ -8,6 +8,7 @@ import json
 import mimetypes
 import re
 import sys
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -69,6 +70,22 @@ def make_handler(runs_dir, ui_dist):
         def _json(self, code, obj):
             self._send(code, json.dumps(obj, default=str), "application/json; charset=utf-8")
 
+        def _read_json(self, maximum):
+            content_type = Message()
+            content_type["content-type"] = self.headers.get("Content-Type", "")
+            if content_type.get_content_type() != "application/json":
+                raise ValueError("Content-Type must be application/json")
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError as exc:
+                raise ValueError("invalid Content-Length") from exc
+            if length <= 0 or length > maximum:
+                raise ValueError(f"request body must be between 1 and {maximum} bytes")
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise ValueError("request body must be a JSON object")
+            return body
+
         def _api(self, method, path):
             for m, pat, name in ROUTES:
                 match = pat.match(path)
@@ -104,12 +121,7 @@ def make_handler(runs_dir, ui_dist):
             if name == "task":
                 return self._json(200, report.task_detail(runs_dir, args[0], args[1]))
             if name == "regrade":
-                length = int(self.headers.get("Content-Length") or 0)
-                if length < 0 or length > 4096:
-                    raise ValueError("request body must be between 0 and 4096 bytes")
-                body = json.loads(self.rfile.read(length) or b"{}")
-                if not isinstance(body, dict):
-                    raise ValueError("request body must be a JSON object")
+                body = self._read_json(4096)
                 grader = body.get("grader", "")
                 if grader not in graders.GRADERS:
                     raise ValueError(f"unknown grader {grader!r}; choose from {sorted(graders.GRADERS)}")
@@ -140,16 +152,11 @@ def make_handler(runs_dir, ui_dist):
             if path.startswith("/api/"):
                 if path in ("/api/runs", "/api/task-files/validate"):
                     try:
-                        length = int(self.headers.get("Content-Length") or 0)
-                        if length < 0 or length > 2_100_000:
-                            raise ValueError("request body exceeds the 2 MB upload limit")
-                        body = json.loads(self.rfile.read(length) or b"{}")
-                        if not isinstance(body, dict):
-                            raise ValueError("request body must be a JSON object")
+                        body = self._read_json(2_100_000)
                         if path.endswith("/validate"):
                             return self._json(200, validate_files(body.get("files")))
                         return self._json(202, jobs.create(body))
-                    except (ValueError, KeyError, json.JSONDecodeError) as exc:
+                    except (ValueError, KeyError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                         return self._json(400, {"error": str(exc)})
                 return self._api("POST", path)
             return self._send(404, "not found", "text/plain")

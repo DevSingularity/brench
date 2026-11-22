@@ -14,6 +14,8 @@ from ..persistence import batch, report, store
 MAX_FILES = 32
 MAX_TOTAL_BYTES = 2_000_000
 SAFE_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]*\.ya?ml$", re.I)
+SECRET_FIELD = re.compile(r"^\s*(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|passwd|private[_-]?key|authorization)\s*:", re.I)
+SECRET_VALUE = re.compile(r"sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{12,}|Bearer\s+[A-Za-z0-9._-]{16,}", re.I)
 
 
 def _validated_files(files):
@@ -34,6 +36,11 @@ def _validated_files(files):
         total += len(item["content"].encode("utf-8"))
         if total > MAX_TOTAL_BYTES:
             raise ValueError("Combined task files exceed the 2 MB limit.")
+        if "\ufffd" in item["content"]:
+            raise ValueError(f"{name}: file is not valid UTF-8 text.")
+        for line_number, line in enumerate(item["content"].splitlines(), 1):
+            if SECRET_FIELD.search(line) or SECRET_VALUE.search(line):
+                raise ValueError(f"{name}:{line_number}: possible credential detected; remove secrets before uploading task files.")
         normalized.append({"name": name, "content": item["content"]})
     return normalized
 
@@ -46,6 +53,23 @@ def validate_files(files):
         for item in files:
             (Path(tmp) / item["name"]).write_text(item["content"], encoding="utf-8")
         result = load_tasks([tmp])
+    issues = []
+    for error in result.errors:
+        file = Path(error.split(":", 1)[0]).name
+        detail = error.split(": ", 1)[1] if ": " in error else error
+        field, separator, message = detail.partition(": ")
+        issues.append({"file": file, "field": field if separator and not field.startswith(("invalid YAML", "cannot read")) else None,
+                       "message": message if separator else detail})
+    pairs = {}
+    for task in result.tasks:
+        pair = pairs.setdefault(task.doc["pair_id"], {"pair_id": task.doc["pair_id"], "roles": [], "task_ids": []})
+        pair["roles"].append(task.doc["pair_role"])
+        pair["task_ids"].append(task.doc["id"])
+    for warning in result.warnings:
+        pair_id = warning.split("'", 2)[1] if "'" in warning else warning
+        pairs.setdefault(pair_id, {"pair_id": pair_id, "roles": [], "task_ids": []})["warning"] = warning
+    for pair in pairs.values():
+        pair["complete"] = sorted(pair["roles"]) == ["act_case", "escalate_case"]
     return {"valid": not result.errors and bool(result.tasks),
             "files": [f["name"] for f in files],
             "tasks": [{"id": t.doc["id"], "domain": t.doc["domain"], "category": t.doc["category"],
@@ -57,7 +81,8 @@ def validate_files(files):
                                        "escalation_requirements": t.doc["escalation_requirements"],
                                        "contamination_controls": t.doc["contamination_controls"]}}
                       for t in result.tasks],
-            "errors": result.errors, "warnings": result.warnings}
+            "errors": result.errors, "issues": issues, "warnings": result.warnings,
+            "pair_coverage": list(pairs.values())}
 
 
 class PipelineJobs:

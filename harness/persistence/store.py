@@ -81,8 +81,9 @@ def save_task_run(runs_dir, run_id, task_id, task_text, trajectory, verdict, met
     _atomic_write(d / "task.yaml", task_text)
     lines = [json.dumps(redact(r), ensure_ascii=False) for r in trajectory]
     _atomic_write(d / "trajectory.jsonl", "\n".join(lines) + "\n")
-    _write_json(d / "verdict.json", redact(verdict))
     _write_json(d / "meta.json", redact(meta))
+    # verdict.json is the task commit marker; reports only include tasks after it exists.
+    _write_json(d / "verdict.json", redact(verdict))
 
 
 def list_run_ids(runs_dir):

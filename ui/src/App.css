@@ -442,6 +442,10 @@
 .validation-errors>strong{font-size:13px}
 .validation-errors small{color:#854d0e}
 .review-task-list{display:grid;gap:10px}
+.pair-coverage{display:grid;gap:5px;margin:12px 0;padding:11px 12px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px}
+.pair-coverage>strong{font-size:12px}
+.pair-complete{color:#315a40}
+.pair-incomplete{color:#9a5b08}
 .review-task-list article{padding:13px 14px;border:1px solid var(--border);border-radius:8px;background:#fff}
 .review-task-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .review-task-heading>div{display:flex;flex-direction:column;gap:4px}
