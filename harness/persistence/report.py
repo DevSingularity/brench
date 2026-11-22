@@ -79,11 +79,30 @@ def task_detail(runs_dir, run_id, task_id):
     if not (base / "verdict.json").is_file():
         raise FileNotFoundError(f"task {task_id!r} not found in run {run_id!r}")
     task = yaml.safe_load((base / "task.yaml").read_text(encoding="utf-8"))
+    run = store.load_run_meta(runs_dir, run_id)
+    source_id = run.get("replay_of") or run_id
+    grade_history = []
+    for candidate_id in store.list_run_ids(runs_dir):
+        candidate = store.load_run_meta(runs_dir, candidate_id)
+        if candidate_id != source_id and candidate.get("replay_of") != source_id:
+            continue
+        verdict_path = store.run_dir(runs_dir, candidate_id) / store.safe(task_id) / "verdict.json"
+        if not verdict_path.is_file():
+            continue
+        grade = store.read_json(verdict_path)
+        grade_history.append({"run_id": candidate_id, "grader": candidate.get("grader"),
+                              "grader_version": grade.get("grader_version"),
+                              "outcome": grade.get("outcome"), "action_match": grade.get("action_match"),
+                              "grader_notes": grade.get("grader_notes"), "is_current": candidate_id == run_id,
+                              "is_source": candidate_id == source_id})
+    grade_history.sort(key=lambda item: (not item["is_source"], item["run_id"]))
     return {
         "task": task,
+        "task_yaml": (base / "task.yaml").read_text(encoding="utf-8"),
         "agent_view": initial_observation(task),
         "trajectory": store.read_jsonl(base / "trajectory.jsonl"),
         "verdict": store.read_json(base / "verdict.json"),
         "meta": store.read_json(base / "meta.json"),
-        "run": store.load_run_meta(runs_dir, run_id),
+        "run": run,
+        "grade_history": grade_history,
     }

@@ -14,10 +14,13 @@ from urllib.parse import urlparse
 
 from ..evaluation import graders, replay
 from ..persistence import report, store
+from .pipeline import PipelineJobs, validate_files
 
 ROUTES = [
     ("GET", re.compile(r"^/api/health$"), "health"),
     ("GET", re.compile(r"^/api/graders$"), "graders"),
+    ("GET", re.compile(r"^/api/agents$"), "agents"),
+    ("GET", re.compile(r"^/api/jobs/([^/]+)$"), "job"),
     ("GET", re.compile(r"^/api/runs$"), "runs"),
     ("GET", re.compile(r"^/api/runs/([^/]+)$"), "run"),
     ("GET", re.compile(r"^/api/runs/([^/]+)/tasks/([^/]+)$"), "task"),
@@ -45,6 +48,7 @@ def fallback_page(runs_dir):
 
 def make_handler(runs_dir, ui_dist):
     runs_dir, ui_dist = Path(runs_dir), Path(ui_dist)
+    jobs = PipelineJobs(runs_dir)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "Brench/0.1"
@@ -82,8 +86,13 @@ def make_handler(runs_dir, ui_dist):
             if name == "graders":
                 return self._json(200, {"graders": [{"name": n, "version": v} for n, v in graders.VERSIONS.items()],
                                         "default": graders.DEFAULT})
+            if name == "agents":
+                from ..core.agents import AGENTS
+                return self._json(200, {"agents": [{"name": key, "kind": "fixture"} for key in sorted(AGENTS)]})
             if name == "runs":
                 return self._json(200, {"runs": [report.run_summary(runs_dir, r) for r in store.list_run_ids(runs_dir)]})
+            if name == "job":
+                return self._json(200, jobs.get(args[0]))
             if name == "run":
                 store.safe(args[0])
                 return self._json(200, report.run_detail(runs_dir, args[0]))
@@ -124,6 +133,19 @@ def make_handler(runs_dir, ui_dist):
         def do_POST(self):
             path = urlparse(self.path).path
             if path.startswith("/api/"):
+                if path in ("/api/runs", "/api/task-files/validate"):
+                    try:
+                        length = int(self.headers.get("Content-Length") or 0)
+                        if length < 0 or length > 2_100_000:
+                            raise ValueError("request body exceeds the 2 MB upload limit")
+                        body = json.loads(self.rfile.read(length) or b"{}")
+                        if not isinstance(body, dict):
+                            raise ValueError("request body must be a JSON object")
+                        if path.endswith("/validate"):
+                            return self._json(200, validate_files(body.get("files")))
+                        return self._json(202, jobs.create(body))
+                    except (ValueError, KeyError, json.JSONDecodeError) as exc:
+                        return self._json(400, {"error": str(exc)})
                 return self._api("POST", path)
             return self._send(404, "not found", "text/plain")
 

@@ -44,17 +44,34 @@ UI is committed under `ui/dist`; Node is only needed when changing the UI.
 
 ```sh
 python -m pip install -r requirements.txt
-docker compose up -d db
 python -m harness demo
 ```
 
-The command runs the fixture agents over `tasks/`, writes saved evidence under
+The command runs fixture agents over `tasks/`, writes saved evidence under
 `runs/`, and serves the UI at `http://127.0.0.1:8765`. Use `--no-browser` to
 keep it from opening a browser automatically. No API key or network access is
-needed after PyYAML is installed. Docker Compose starts PostgreSQL 16 for local
-persistence; only the database is containerized. The Python server and UI run on
-the host. Copy `.env.example` to `.env` and configure `DATABASE_URL` before
-starting the app.
+needed after PyYAML is installed. The current evidence store is local
+file-backed JSON/YAML; PostgreSQL is not currently used by the harness.
+
+### Run a task set from the UI
+
+Open the workspace from the landing page and choose **New evaluation**. Add one
+or more `.yaml` / `.yml` task files, validate them, choose a scripted fixture
+agent and grader, then start the pipeline. The UI shows task loading and
+validation, fixture dispatch, every trace record, grading and evidence saving.
+On completion, open the run to inspect the saved verdict and full trace. The
+workspace also offers **Re-grade saved trace**: choose another grader to create
+a linked replay without calling the agent again. Fixture runs are deterministic
+scripts, not live model results. `oracle` is a harness sanity check that can see
+trusted task metadata and must not be treated as a model baseline.
+
+Live pipeline status/events are held in the serving process while a job is
+running. The job ID and run configuration are also recorded in run metadata;
+after a server restart, the UI reconstructs the job view from saved evidence and
+marks an unfinished run interrupted. Task snapshots, trajectories, verdicts and
+run metadata are stored under `runs/` as each task completes; a failed batch
+keeps its completed task evidence and records a failed run status. Keep the
+server bound to loopback for local use.
 
 Useful commands:
 
@@ -106,7 +123,11 @@ full trace, including blocked attempts.
 ## Limits
 
 The included agents are deterministic fixtures, not live model runs. Tool
-effects are simulated and never call external services. Tripwire conditions
+effects are simulated and never call external services. Browser-triggered runs
+are limited to one active pipeline per server process. After a process exits,
+ordered live events are reconstructed from saved trajectories and verdicts;
+events that were never persisted cannot be recovered.
+Tripwire conditions
 support only `amount_usd > N` and `payee not in vendor_master`; unsupported
 conditions fail validation. An imported trace can be graded only to the extent
 that it has been normalized to the published trajectory contract. Scores do

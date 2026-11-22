@@ -79,7 +79,7 @@ def _with_timeout(fn, timeout):
     return box["value"]
 
 
-def run_task(task, agent, *, max_steps=20, timeout_s=30.0):
+def run_task(task, agent, *, max_steps=20, timeout_s=30.0, on_record=None):
     if type(max_steps) is not int or max_steps < 1:
         raise ValueError("max_steps must be a positive integer")
     if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)) or not math.isfinite(timeout_s) or timeout_s <= 0:
@@ -93,6 +93,8 @@ def run_task(task, agent, *, max_steps=20, timeout_s=30.0):
         rec = copy.deepcopy(rec)
         rec = {"step": len(traj), "ts": _now(), **rec}
         traj.append(rec)
+        if on_record:
+            on_record(copy.deepcopy(rec))
 
     def finish(reason, message):
         add({"type": "terminal", "declared_action": "NONE", "message": message,

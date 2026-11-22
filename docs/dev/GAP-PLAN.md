@@ -3,6 +3,11 @@
 This plan records the remaining work after reviewing the current checkout. It
 builds on `IMPLEMENTATION-AUDIT.md`; it does not replace the earlier findings.
 
+The P0 database row (GAP-02, GAP-03, GAP-08) has a full design, schema, call-site
+inventory, test strategy and time-boxed schedule in
+`docs/plans/DB-PERSISTENCE.md`. This register stays the priority order; that
+document is the implementation plan for it.
+
 ## Priority plan
 
 | Order | Work | Acceptance |
