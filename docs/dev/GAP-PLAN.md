@@ -1,7 +1,9 @@
 # Brench implementation plan and loophole register
 
-This plan records the remaining work after reviewing the current checkout. It
-builds on `IMPLEMENTATION-AUDIT.md`; it does not replace the earlier findings.
+This plan is a backlog snapshot; completed rows below are retained for history,
+not asserted as open defects. Evidence storage is file-backed today. PostgreSQL
+is a separate architecture decision, not a prerequisite for the local Track B
+fixture flow.
 
 The P0 database row (GAP-02, GAP-03, GAP-08) has a full design, schema, call-site
 inventory, test strategy and time-boxed schedule in
@@ -12,12 +14,12 @@ document is the implementation plan for it.
 
 | Order | Work | Acceptance |
 |---|---|---|
-| P0 | Persist runs and trace evidence in PostgreSQL 16, with schema/migrations, health checks, and a documented local workflow. Keep only PostgreSQL in Compose; run the Python app on the host. | A fresh Compose database accepts a run; restarting the DB preserves it; API/report/replay/import all use the same store. |
-| P0 | Close run lifecycle and evidence integrity gaps: atomic run creation, no partial visible run, non-destructive retries, secret-safe task snapshots, bounded resource use. | Duplicate IDs and interrupted runs cannot overwrite or masquerade as complete evidence; regression coverage pins behavior. |
+| P0 | Decide whether PostgreSQL is required for the final deployment. Current Track B flow uses the local file store; do not describe the optional Compose database as the system of record. | Architecture and README agree; if PostgreSQL is selected, route all paths through it and add migrations/transactions before claiming completion. |
+| P1 | Close remaining evidence and secret policy gaps: broaden credential detection to CLI/import inputs, document local file retention, and add adversarial regression coverage. Multi-task runs remain explicit partial runs, not transactions. | Browser uploads reject common secret fields/tokens; interrupted runs retain status and completed task evidence; risks are stated honestly. |
 | P1 | Replace the home-grown UI primitive layer with standard shadcn/ui patterns and Radix-backed accessible controls; make the workspace calm, legible, responsive, and evidence-first. | Components follow shadcn conventions and keyboard/focus states; no novelty gradients, oversized display type, or decorative dashboard chrome. |
 | P1 | Build a proper Brench landing page that explains the evaluation flow, evidence model, limits, and local workspace entry point. | Landing page is useful without a database/demo run and never presents fixture data as live model results. |
 | P1 | Align README, walkthrough, phase plan, decision record, and dev audit with Brench, PostgreSQL, exact startup commands, current paths, and actual behavior. | A clean checkout can follow one canonical setup path; no stale “file store” or old product naming claims remain. |
-| P2 | Harden HTTP/API operational behavior: explicit content-type/body limits, structured errors, request timeouts, safe static paths, and concurrency behavior. | Malformed requests return controlled errors; concurrent writes do not corrupt or duplicate a run. |
+| P2 | Continue HTTP/API hardening: content type, body limits, structured task diagnostics, upload caps, loopback trust and single-active-job concurrency are implemented; add regression coverage and request/read timeouts. | Malformed/oversized requests return controlled errors and concurrency does not corrupt evidence. |
 | P2 | Expand coverage around grader invariants, import/replay fidelity, security redaction, task schemas, and persistence failure recovery. | Tests exercise adversarial inputs and data-store restart/failure cases. |
 
 ## Loophole register
@@ -26,12 +28,12 @@ document is the implementation plan for it.
 |---|---|---|---|
 | GAP-01 | The UI primitives are custom CSS/React wrappers described as “shadcn-style”; they do not use the standard shadcn/Radix component implementation. | Medium | Adopt standard shadcn component patterns and accessible Radix primitives where interaction requires them. |
 | GAP-02 | Runs are still persisted as directories and JSON files. There is no PostgreSQL configuration, schema, migration, or data access layer. | High | Implement PostgreSQL-backed run/task/evidence persistence and make every CLI/API path use it. |
-| GAP-03 | The newly added atomic file writer protects individual files, but a multi-task run becomes visible before all tasks and metadata are committed. A crash can leave a partial run. | High | Use a database transaction for run creation and task evidence; define whether incomplete runs are retained as explicit incomplete records. |
-| GAP-04 | `task.yaml` is deliberately copied byte-for-byte and bypasses redaction. Secrets included in caller-provided context can be persisted. | High | Preserve replay semantics while encrypting or excluding secret-bearing input fields; document the contract. |
-| GAP-05 | Timeout abandons a daemon thread. An adapter may keep consuming resources or performing external work after the harness returns `NONE`. | Medium | Keep adapters local-only until killable process isolation exists; add resource and cancellation boundaries before live adapters. |
+| GAP-03 | Multi-task runs are not all-or-nothing transactions. Completed task evidence is intentionally retained and the run is marked partial/interrupted after failure. | Medium | Keep this contract explicit; use PostgreSQL transactions only if the product selects a database-backed all-or-nothing model. |
+| GAP-04 | Common credential fields/tokens are rejected by the shared task loader on browser, CLI and importer paths, but novel secret formats are not comprehensively detected. | Low | Keep all task sources secret-free; broaden detection or offer a reviewed redaction policy without changing replay semantics. |
+| GAP-05 | Fixture tasks are isolated in killable child processes; cancellation is cooperative between tasks. | Low | Keep live adapters out of scope until their side effects and cancellation semantics are defined. |
 | GAP-06 | The task validator supports a deliberately narrow context/tool/tripwire vocabulary. Unsupported conditions are rejected, but unknown context types can be exposed as brief text. | Medium | Enforce explicit context handling and add fixtures for every accepted type and unknown-type behavior. |
-| GAP-07 | API is unauthenticated and loopback-only by default. A caller can request regrading, which creates additional persisted evidence. | Medium | Keep loopback binding; add request-size/content-type validation and document local trust boundary. |
-| GAP-08 | Documentation contains conflicting persistence claims: implementation audit says files, while the product requirement now calls for PostgreSQL. | High | Update all onboarding and demo docs after the database path is implemented; identify migration/backup behavior. |
+| GAP-07 | API is unauthenticated and loopback-only by default. | Medium | Keep loopback binding; JSON content type and body bounds are enforced. Do not expose without authentication. |
+| GAP-08 | Older docs implied PostgreSQL was required/active while the app uses files. | Medium | README and audit now identify the optional container and file-backed evidence accurately; choose a DB architecture only if the deployment requires it. |
 | GAP-09 | Landing page preview currently mixes hard-coded sample rows with a live-selected run summary, so figures can look like actual run output. | Medium | Use fully labeled static sample data or render actual rows from the selected run, never a mixture. |
 | GAP-10 | The five visual reference attachments were not available in the checkout/context provided to this pass. | Low | Revisit visual details when references can be inspected; current direction uses restrained, standard shadcn conventions. |
 
@@ -55,5 +57,5 @@ document is the implementation plan for it.
 - Product name: **Brench**.
 - Database image: **`postgres:16-alpine`**.
 - Docker Compose owns the database only. The Python API/UI runs as a host process.
-- Persistent run evidence belongs in PostgreSQL; a Compose database alone does
-  not satisfy the persistence requirement.
+- Current persisted evidence belongs in the local file store; the optional
+  Compose PostgreSQL service is unused by the harness.

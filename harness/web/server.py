@@ -55,6 +55,10 @@ def make_handler(runs_dir, ui_dist):
     class Handler(BaseHTTPRequestHandler):
         server_version = "Brench/0.1"
 
+        def setup(self):
+            super().setup()
+            self.request.settimeout(10)
+
         def log_message(self, fmt, *args):
             sys.stderr.write("[server] " + fmt % args + "\n")
 
@@ -165,4 +169,6 @@ def make_handler(runs_dir, ui_dist):
 
 
 def make_server(runs_dir, ui_dist, host="127.0.0.1", port=8765):
+    if host != "127.0.0.1":
+        raise ValueError("Brench's unauthenticated local API must bind to 127.0.0.1")
     return ThreadingHTTPServer((host, port), make_handler(runs_dir, ui_dist))

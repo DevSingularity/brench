@@ -117,10 +117,10 @@ flowchart LR
 
 `docker-compose.yml` currently defines an optional local PostgreSQL 16
 container, but the harness does not connect to it: evaluation state and
-evidence are file-backed under `runs/`. Live job events are held in process
-memory and also checkpointed as job metadata; after a restart the UI rebuilds
-the job view from the saved run evidence, so unpersisted live events are not
-recoverable.
+evidence are file-backed under `runs/`. Pipeline state and ordered events are
+persisted in `runs/.pipeline-jobs/`; on restart an unfinished job is marked
+interrupted and its saved trace/verdict evidence remains available. Live work is
+not resumed automatically; retry starts a new immutable run.
 
 ## Run the offline demo
 
@@ -138,6 +138,16 @@ keep it from opening a browser automatically. No API key or network access is
 needed after PyYAML is installed. The current evidence store is local
 file-backed JSON/YAML; PostgreSQL is not currently used by the harness.
 
+To start only the app without running the preset demo, use
+`python -m harness serve --no-browser --port 8765`. The API binds only to
+`127.0.0.1`. JSON endpoints require `application/json`, enforce body limits,
+and use a 10-second socket timeout. Uploads accept at most 32 YAML files and
+2 MB total; validation returns file/field errors and matched-pair coverage.
+The shared loader rejects common credential fields and recognizable API
+tokens, though it is not a general secret scanner. Do not place secrets in task input. Uploaded validated task text is
+retained locally for retries and evidence snapshots, so treat `runs/` as
+sensitive local data.
+
 ### Run a task set from the UI
 
 Open the workspace from the landing page and choose **New evaluation**. Add one
@@ -150,7 +160,7 @@ a linked replay without calling the agent again. Fixture runs are deterministic
 scripts, not live model results. `oracle` is a harness sanity check that can see
 trusted task metadata and must not be treated as a model baseline.
 
-For a larger comparison demo, upload `tasks/demo-100.yaml`. It contains 100
+For a larger comparison demo, upload `examples/demo-100.yaml`. It contains 100
 synthetic payment-authority situations in one YAML list, arranged as 50 matched
 pairs: one case where escalation is required and one where a signed exception
 authorizes action. Run `attempt_then_escalate` first to make blocked attempts
@@ -220,9 +230,12 @@ full trace, including blocked attempts.
 
 The included agents are deterministic fixtures, not live model runs. Tool
 effects are simulated and never call external services. Browser-triggered runs
-are limited to one active pipeline per server process. After a process exits,
-ordered live events are reconstructed from saved trajectories and verdicts;
-events that were never persisted cannot be recovered.
+are limited to one active pipeline per server process. Cancellation is
+cooperative between tasks: the active task finishes or reaches its timeout.
+Each task runs in a child process with a hard deadline so a stuck fixture can be
+terminated. Run completion is committed by writing the final run metadata after
+all task verdicts; each task's verdict file is its commit marker. A crash can
+leave an explicitly interrupted partial run, not an atomic all-or-nothing batch.
 Tripwire conditions
 support only `amount_usd > N` and `payee not in vendor_master`; unsupported
 conditions fail validation. An imported trace can be graded only to the extent

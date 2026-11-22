@@ -20,6 +20,8 @@ from harness.core import conditions, contract, runner
 from harness.evaluation import graders, importer, replay
 from harness.persistence import batch, report, store
 from harness.web import server
+from harness.web.pipeline import validate_files
+from harness.web.pipeline import PipelineJobs
 from harness.core.agents import AGENTS, Oracle, Scripted, make_agent
 from harness.core.runner import Call, Decide
 from harness.core.tasks import load_tasks
@@ -399,6 +401,82 @@ class StoreTests(unittest.TestCase):
                 store.safe(bad)
 
 
+class UploadValidationTests(unittest.TestCase):
+    def test_field_diagnostics_pair_coverage_and_multi_task_file(self):
+        content = (ROOT / "examples" / "demo-100.yaml").read_text(encoding="utf-8")
+        result = validate_files([{"name": "demo-100.yaml", "content": content}])
+        self.assertTrue(result["valid"])
+        self.assertEqual(len(result["tasks"]), 100)
+        self.assertEqual(len(result["pair_coverage"]), 50)
+        self.assertTrue(all(pair["complete"] for pair in result["pair_coverage"]))
+
+        broken = yaml.safe_load((TASKS / "FIN-INV-0007.task.yaml").read_text(encoding="utf-8"))
+        broken["stakes_tier"] = 9
+        result = validate_files([{"name": "broken.yaml", "content": yaml.safe_dump(broken)}])
+        self.assertFalse(result["valid"])
+        self.assertTrue(any(issue["field"] == "stakes_tier" for issue in result["issues"]))
+
+    def test_common_credentials_rejected_before_persistence(self):
+        result = validate_files([{"name": "secret.yaml", "content": "api_key: sk-abcdefghijklmnop1234\n"}])
+        self.assertFalse(result["valid"])
+        self.assertTrue(any(issue["field"] == "credentials" for issue in result["issues"]))
+
+
+class PipelineJobTests(unittest.TestCase):
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.out)
+        source = task("FIN-INV-0007")
+        self.files = [{"name": "one.yaml", "content": yaml.safe_dump(source, sort_keys=False)}]
+
+    def wait_for(self, jobs, job_id, expected):
+        import time
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            job = jobs.get(job_id)
+            if job["status"] in expected:
+                return job
+            time.sleep(0.05)
+        self.fail(f"job {job_id} did not reach {expected}")
+
+    def test_cancel_then_retry_creates_new_run(self):
+        jobs = PipelineJobs(self.out)
+        first = jobs.create({"files": self.files, "agent": "hanger", "grader": "strict", "timeout_s": 0.2})
+        jobs.cancel(first["job_id"])
+        cancelled = self.wait_for(jobs, first["job_id"], {"cancelled"})
+        retried = jobs.retry(cancelled["job_id"])
+        self.assertNotEqual(first["run_id"], retried["run_id"])
+        jobs.cancel(retried["job_id"])
+        self.assertEqual(self.wait_for(jobs, retried["job_id"], {"cancelled"})["status"], "cancelled")
+
+    def test_job_events_survive_registry_recreation(self):
+        jobs = PipelineJobs(self.out)
+        job = jobs.create({"files": self.files, "agent": "always_act", "grader": "strict", "timeout_s": 2})
+        completed = self.wait_for(jobs, job["job_id"], {"completed"})
+        restored = PipelineJobs(self.out).get(job["job_id"])
+        self.assertEqual(restored["status"], "completed")
+        self.assertEqual(len(restored["events"]), len(completed["events"]))
+        self.assertTrue((self.out / ".pipeline-jobs" / f"{job['job_id']}.input.json").is_file())
+
+    def test_timeout_isolated_and_terminal_evidence_is_saved(self):
+        jobs = PipelineJobs(self.out)
+        job = jobs.create({"files": self.files, "agent": "hanger", "grader": "strict", "timeout_s": 0.15})
+        completed = self.wait_for(jobs, job["job_id"], {"completed"})
+        evidence = report.task_detail(self.out, completed["run_id"], "FIN-INV-0007")
+        self.assertEqual(evidence["trajectory"][-1]["termination_reason"], "timeout")
+        self.assertEqual(evidence["verdict"]["outcome"], "no_decision")
+
+    def test_orphaned_running_job_recovers_as_interrupted(self):
+        jobs = PipelineJobs(self.out)
+        job = {"job_id": "ab" * 16, "run_id": "orphaned", "status": "running", "stage": "running",
+               "created": "2026-11-22T00:00:00Z", "config": {}, "events": [{"sequence": 0, "stage": "running"}]}
+        jobs._save(job)
+        restored = PipelineJobs(self.out).get(job["job_id"])
+        self.assertEqual(restored["status"], "interrupted")
+        self.assertIn("retry creates a new run", restored["error"])
+        self.assertEqual(restored["events"], job["events"])
+
+
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -445,16 +523,29 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertIn(b"Brench UI bundle is missing", body)
 
+    def test_server_refuses_non_loopback_binding(self):
+        with self.assertRaisesRegex(ValueError, "must bind to 127.0.0.1"):
+            server.make_server(self.out, self.out / "no-dist", host="0.0.0.0", port=0)
+
     def test_regrade_endpoint(self):
         req = urllib.request.Request(f"{self.base}/api/runs/{self.rid}/regrade", method="POST",
-                                     data=json.dumps({"grader": "reference"}).encode())
+                                     data=json.dumps({"grader": "reference"}).encode(),
+                                     headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req) as r:
             new_id = json.loads(r.read())["run_id"]
         self.assertEqual(new_id, f"{self.rid}__reference")
         bad = urllib.request.Request(f"{self.base}/api/runs/{self.rid}/regrade", method="POST",
-                                     data=json.dumps({"grader": "bogus"}).encode())
+                                     data=json.dumps({"grader": "bogus"}).encode(),
+                                     headers={"Content-Type": "application/json"})
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(bad)
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_json_api_requires_json_content_type(self):
+        req = urllib.request.Request(f"{self.base}/api/task-files/validate", method="POST",
+                                     data=b'{"files":[]}', headers={"Content-Type": "text/plain"})
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req)
         self.assertEqual(ctx.exception.code, 400)
 
 

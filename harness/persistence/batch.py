@@ -79,6 +79,8 @@ def run_batch(loaded_tasks, agent_name, *, runs_dir, run_id=None, seed=0, grader
             if on_event:
                 on_event({"type": "task_graded", "task_id": task["id"], "outcome": verdict["outcome"],
                           "grader_version": verdict["grader_version"]})
+        if should_cancel and should_cancel():
+            raise BatchCancelled("Evaluation cancelled after the active task finished; its evidence was preserved.")
     except BaseException as exc:
         meta.update(status="cancelled" if isinstance(exc, BatchCancelled) else "failed",
                     error=f"{type(exc).__name__}: {exc}", task_ids=list(ids),

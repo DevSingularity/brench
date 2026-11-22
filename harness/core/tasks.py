@@ -11,6 +11,8 @@ import yaml
 from .contract import validate_task
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SECRET_FIELD = re.compile(r"^\s*(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|passwd|private[_-]?key|authorization)\s*:", re.I)
+SECRET_VALUE = re.compile(r"sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{12,}|Bearer\s+[A-Za-z0-9._-]{16,}", re.I)
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -74,6 +76,11 @@ def load_tasks(paths):
             text = f.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             res.errors.append(f"{f}: cannot read file: {exc}")
+            continue
+        credential_lines = [n for n, line in enumerate(text.splitlines(), 1)
+                            if SECRET_FIELD.search(line) or SECRET_VALUE.search(line)]
+        if credential_lines:
+            res.errors.append(f"{f}: credentials: possible secret on line(s) {credential_lines}; remove secrets from task input")
             continue
         try:
             doc = yaml.load(text, Loader=UniqueKeyLoader)

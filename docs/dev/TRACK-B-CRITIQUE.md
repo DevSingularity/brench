@@ -14,22 +14,22 @@ The core offline harness is substantially present: tasks are validated, a determ
 
 At the initial review baseline, the browser was a **read-only saved-run viewer**. The product changes made in this pass close the main journey gap: a guided file intake and validation flow now starts a fixture run, streams pipeline evidence, opens a dedicated page for each saved run, and offers grader replay. Historical findings below are labeled as baseline findings; remaining gaps are summarized at the end.
 
-There is also a material persistence discrepancy: `docker-compose.yml` starts PostgreSQL and `README.md` tells users to start it, but the active store in `harness/persistence/store.py` persists runs as directories and JSON files. No database connection, schema, migration, or database repository appears in the run, report, import, replay, or HTTP paths. The running product should not imply PostgreSQL backs its evidence until that integration exists.
+The active store in `harness/persistence/store.py` persists runs as directories and JSON files. `docker-compose.yml` has an optional PostgreSQL service, but the harness does not connect to it. README now states this accurately; PostgreSQL remains a separate deployment choice rather than an implemented capability.
 
 ## Track B requirement assessment
 
 | Track B requirement | Current implementation | Assessment |
 |---|---|---|
-| Load supplied YAML pair; validate with clear errors | `harness/core/tasks.py`, contract validator, and CLI `validate-tasks` / `_load` | **Mostly met in CLI.** No browser upload or validation flow. Validation feedback is not presented as a task-authoring experience. |
-| Run scripted fixture against controlled mock tools | `harness/core/runner.py`, `harness/core/agents.py`, mock environment | **Met for offline fixture execution.** CLI is the only run entry point. |
+| Load supplied YAML pair; validate with clear errors | `harness/core/tasks.py`, `harness/web/pipeline.py`, browser wizard | **Met for browser and CLI.** Upload accepts a YAML document or list; validation returns file/field issues and pair coverage. |
+| Run scripted fixture against controlled mock tools | `harness/core/runner.py`, `harness/core/agents.py`, mock environment | **Met for offline fixture execution.** UI and CLI entry points exist; each browser task runs in a child process. |
 | Check permissions and tripwires before execution; retain blocked attempts | Runner preflight and trajectory records; UI highlights blocked tool results | **Largely met.** Keep the distinction clear between tool calls blocked by the simulator and external side effects; no live adapter is part of this path. |
-| Step budget, timeout, terminal `NONE` for unfinished runs | `run_task` handles timeout, step budget, model error and abort with terminal `NONE` | **Met with a boundary limitation.** A timed-out daemon thread cannot be killed and can keep computing; document this and do not run untrusted/live agents in-process. |
+| Step budget, timeout, terminal `NONE` for unfinished runs | `run_task`, `run_task_isolated` | **Met for fixtures.** The outer task process is killable; the UI cancellation request waits for the current task to finish or time out. |
 | Keep grading metadata out of agent observations | `initial_observation` exposes role/grant/brief/history and withholds grading fields | **Met by design.** Preserve this invariant as upload, run configuration and adapters are added. |
 | One documented offline command saves evidence and starts UI | `python -m harness demo` runs, persists and serves the UI | **Met from CLI, with repeat-run behavior improved in `batch.py`.** It runs a preset collection of fixture agents/tasks, rather than letting a user build a run in the UI. |
 | Persist task/run identity, full trace, verdict and model/seed metadata | File store writes snapshots, JSONL traces, verdicts and metadata | **Evidence exists on disk.** Persistence is filesystem-backed despite PostgreSQL setup claims. Atomicity is per-file; a multi-task run may be visible before all evidence and metadata are committed. |
-| Redact secrets from raw requests/responses | Store redacts credential-like keys/patterns in trace and metadata writes | **Partial.** There is no live raw request/response integration; imported evidence is normalized. Task YAML snapshots are written byte-for-byte and can retain secrets placed in task context. |
+| Redact secrets from raw requests/responses | `store.redact`, browser intake validation | **Partial.** Browser uploads reject common credential fields and token formats; CLI/import inputs and novel secret formats remain caller responsibility. Do not upload secrets. |
 | Pluggable `grade(...)` and replay without agent/model rerun | `harness/evaluation/graders/`, `replay.py`, replay CLI | **Met in core.** The UI offers no re-grade action, and replay creates another saved run rather than a visible pipeline operation. |
-| Results UI run list, category × domain matrix, stakes breakdown, distinct outcomes | `report.py` and `ui/src/App.jsx` | **Mostly met for an individual selected run.** Run selector exists; matrix and stakes are shown; unauthorised and over-escalation are distinct. The UI does not give a useful run-management page or expose every outcome breakdown prominently. |
+| Results UI run list, category × domain matrix, stakes breakdown, distinct outcomes | `report.py` and `ui/src/App.jsx` | **Met for the fixture scope.** Dashboard includes search/type/status filters and two-run aggregate comparison; run pages show matrix, stakes, pair consistency and full outcome distribution. |
 | Cell → task → full trace, verdict and notes | Matrix filters tasks; task panel shows expected/declared decision, rationale, grader notes and trace | **Mostly met.** Trace evidence is inspectable after a run. UI evidence context should be explicit about trusted task/oracle fields vs what the agent observed. |
 | Tests, organiser fixtures, setup, known limits | `tests/`, vendored contract validation, README and walkthrough | **Partially evidenced.** The suite and documentation cover many requirements, but this review did not execute tests. Several audit findings remain open and the PostgreSQL statements are inaccurate for current code. |
 
@@ -44,7 +44,9 @@ There is also a material persistence discrepancy: `docker-compose.yml` starts Po
 - **The UI can inspect full traces.** Blocked attempts are visibly marked, with arguments and results available for review.
 - **The app has a documented offline route.** The React bundle is committed and the fixture run needs no model key.
 
-## Major product and implementation gaps
+## Major product and implementation gaps (initial review baseline)
+
+The following entries preserve the pre-implementation critique. Their product gaps are closed unless listed under remaining limitations at the end.
 
 ### P0 — No user-facing pipeline entry point
 
@@ -206,10 +208,10 @@ For an initial local product, run jobs in a bounded worker owned by the local se
 
 The browser workflow described above is now implemented in this worktree:
 
-- **Task intake and validation:** the workspace has a YAML file picker and drop zone, selected-file management, validation results, task summaries and pair warnings. The server reuses `load_tasks` and bounds file count and combined size.
+- **Task intake and validation:** the workspace has a YAML file picker and drop zone, selected-file management, validation results, file/field diagnostics, task summaries and pair coverage. The server reuses `load_tasks`, uses the safe YAML loader, bounds file count/size, rejects common credential fields/tokens and blocks invalid runs.
 - **Task visibility preview:** validated tasks can expand to show the exact starting observation sent to the fixture and a separate, labeled view of grader-only fields. The completed inspector also exposes the parsed trusted task and exact saved YAML snapshot.
 - **Run configuration:** users choose a scripted fixture agent, grader, seed, step budget and per-task timeout. The UI calls `POST /api/runs`; the local server validates the input and starts the run in a background thread.
-- **Pipeline view and recovery:** `GET /api/jobs/<id>` exposes persisted job status and ordered events. The UI shows stage status, per-task progress, each trace record, grading, persistence and completion. Job events and retry inputs are stored under `runs/.pipeline-jobs/`; a server restart marks unfinished jobs interrupted and reconstructs their saved evidence. Retry starts a new run ID.
+- **Pipeline view and recovery:** `GET /api/jobs/<id>` exposes persisted job status and ordered events. Job events and retry inputs are stored under `runs/.pipeline-jobs/`; a server restart marks unfinished jobs interrupted and preserves saved evidence. Retry starts a new run ID.
 - **Cancellation and timeout isolation:** users can request cancellation, which stops between tasks after the current task completes or reaches its timeout. Each task runs in a child process that can be terminated at a hard deadline, containing a stuck fixture agent.
 - **Dashboard discovery and comparison:** run history supports text search plus type/status filters. Users can select two runs to compare aggregate task, correct, unauthorized, over-escalation and other-error counts; task pages retain grader-level detail.
 - **Complete evidence inspection:** the selected run shows provenance, status, expected/saved task counts, all contract outcome counts and pair consistency. Task drill-down includes declared/expected action, grader notes and diagnostics, complete trajectory, initial agent observation, trusted task spec, exact YAML, simulator effects and full run/task metadata.
@@ -221,13 +223,14 @@ The browser workflow described above is now implemented in this worktree:
 | Endpoint | Current behavior |
 |---|---|
 | `GET /api/agents` | Lists supported scripted agents and labels them as fixtures. |
-| `POST /api/task-files/validate` | Accepts bounded JSON file names/content, validates with the shared task loader, and returns task summaries, warnings/errors, starting agent observations and a separate grader-only preview. |
+| `POST /api/task-files/validate` | Accepts bounded JSON file names/content, returns structured file/field issues, pair coverage, warnings, task summaries, starting observations and grader-only preview. |
 | `POST /api/runs` | Revalidates the supplied files, validates run settings, creates a unique run, and returns `202` with a job ID. One active browser pipeline is allowed per server process. |
-| `GET /api/jobs/<id>` | Returns in-memory status and ordered stage/task/trace events for polling. |
+| `GET /api/jobs/<id>` | Returns persisted status and ordered stage/task/trace events for polling; interrupted jobs retain partial evidence. |
+| `POST /api/jobs/<id>/cancel` / `retry` | Requests cooperative cancellation or starts a new immutable run from locally stored validated input. |
 | `GET /api/runs`, `GET /api/runs/<id>`, `GET /api/runs/<id>/tasks/<task-id>` | Lists saved runs, aggregates their evidence, and returns full trace plus task, observation, verdict, exact YAML, and metadata. |
 | `POST /api/runs/<id>/regrade` | Grades saved trajectories with a selected grader and returns the new replay run ID. |
 
-The file content is sent again when a run starts; the server validates it again rather than trusting a prior browser validation response. Job/event history is not durable across a server restart, while run/task evidence is written incrementally to the file store.
+The file content is sent again when a run starts; the server validates it again rather than trusting a prior browser validation response. JSON endpoints enforce content type and body limits. Job/event history and retry inputs are durable in the local file store. Each file write is atomic; each task becomes report-visible when its verdict commit marker is written. A multi-task run is explicitly partial on interruption, not all-or-nothing transactional.
 
-The React production bundle builds successfully; Python modules compile, and automated tests were not run in this pass. Remaining limitations include in-memory job status/events (lost when the server exits), no cancellation or durable resume, one active browser pipeline per server process, no PostgreSQL integration, task snapshot content being stored as submitted, and the runner’s non-killable daemon-thread timeout boundary. Validation errors are readable but not yet returned as structured field-path diagnostics. The local API should remain loopback-only. Treat the new UI path as fixture-only; it does not add a live model adapter or an LLM judge.
+Remaining limitations: one active browser pipeline per server process; cooperative cancellation only between tasks; run batches are recoverable but not transactional; credential detection covers common formats and browser uploads but is not a general secret scanner; PostgreSQL is not integrated; the unauthenticated API must remain loopback-only. The UI path is fixture-only and does not add a live model adapter or an LLM judge.
 
