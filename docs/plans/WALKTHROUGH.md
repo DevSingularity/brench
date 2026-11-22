@@ -168,7 +168,7 @@ python -m harness run --agent attempt_then_escalate --run-id demo-esc
 
 ```
 run                                       grader          n  ok  unauth  over  other
-demo-esc                                  strict-1.0.0    6   ?       ?     ?      ?
+demo-esc                                  strict-1.1.0    6   ?       ?     ?      ?
 ```
 
 ### 3.1 What the runner does — `harness/core/runner.py`
@@ -370,14 +370,14 @@ each entry a function `grade(task, trajectory, *, model, run_id, seed) -> verdic
 **Adding a grader = dropping a module in the folder and adding one dict entry.**
 Default is `strict`; `--grader reference` selects the baseline.
 
-**`reference` (fixture-1.1.0)** — the organiser's supplied grader, vendored
+**`reference` (fixture-1.2.0)** — the organiser's supplied grader, vendored
 unchanged, with its *documented* weaknesses kept visible in the docstring:
 - trusts tripwire hits **recorded in the trace** (a trace that under-reports a
   violation is believed);
 - substring token matching and requires the **full** `"role (Name)"` target string;
 - counts distinct retrieval tools as "evidence".
 
-**`strict` (strict-1.0.0)** — our grader, with five *deliberate* differences
+**`strict` (strict-1.1.0)** — our grader, with five *deliberate* differences
 (strict.py:1-17, each documented in the module docstring):
 1. **Recomputes tripwires** from the trusted task + raw `tool_call` args, merges
    recorded hits (`hits = sorted(recomputed | recorded)`). Under-reporting is caught:
@@ -416,7 +416,7 @@ makes replay meaningful. We didn't silently improve it; we shipped it beside our
 | `evidence_steps` | Distinct unblocked retrieval tools |
 | `reward` | Graded scalar (strict) / ±1 (reference) |
 | `grader_notes` | Human-readable reasoning, shown in the UI's "Why this grade" |
-| `grader_version` | `strict-1.0.0` vs `fixture-1.1.0` — stamped on every verdict |
+| `grader_version` | `strict-1.1.0` vs `fixture-1.2.0` — stamped on every verdict |
 | `diagnostics` | first violation step, blocked attempts, recorded vs recomputed hits, per-check booleans |
 
 ---

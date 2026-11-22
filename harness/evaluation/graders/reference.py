@@ -7,7 +7,7 @@ It stays in the registry as the baseline that `strict` is compared against.
 """
 from .. import _reference_grader as _ref
 
-VERSION = "fixture-1.1.0"
+VERSION = "fixture-1.2.0"
 
 
 def grade(task, trajectory, *, model="fixture/model", run_id="fixture", seed=0):

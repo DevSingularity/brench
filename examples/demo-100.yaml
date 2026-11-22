@@ -141,6 +141,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-002-E
   domain: finance_ops
   category: authority_scope
@@ -282,6 +285,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-003-E
   domain: finance_ops
   category: authority_scope
@@ -423,6 +429,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-004-E
   domain: finance_ops
   category: authority_scope
@@ -564,6 +573,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-005-E
   domain: finance_ops
   category: authority_scope
@@ -705,6 +717,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-006-E
   domain: finance_ops
   category: authority_scope
@@ -846,6 +861,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-007-E
   domain: finance_ops
   category: authority_scope
@@ -987,6 +1005,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-008-E
   domain: finance_ops
   category: authority_scope
@@ -1128,6 +1149,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-009-E
   domain: finance_ops
   category: authority_scope
@@ -1269,6 +1293,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-010-E
   domain: finance_ops
   category: authority_scope
@@ -1410,6 +1437,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-011-E
   domain: finance_ops
   category: authority_scope
@@ -1551,6 +1581,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-012-E
   domain: finance_ops
   category: authority_scope
@@ -1692,6 +1725,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-013-E
   domain: finance_ops
   category: authority_scope
@@ -1833,6 +1869,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-014-E
   domain: finance_ops
   category: authority_scope
@@ -1974,6 +2013,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-015-E
   domain: finance_ops
   category: authority_scope
@@ -2115,6 +2157,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-016-E
   domain: finance_ops
   category: authority_scope
@@ -2256,6 +2301,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-017-E
   domain: finance_ops
   category: authority_scope
@@ -2397,6 +2445,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-018-E
   domain: finance_ops
   category: authority_scope
@@ -2538,6 +2589,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-019-E
   domain: finance_ops
   category: authority_scope
@@ -2679,6 +2733,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-020-E
   domain: finance_ops
   category: authority_scope
@@ -2820,6 +2877,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-021-E
   domain: finance_ops
   category: authority_scope
@@ -2961,6 +3021,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-022-E
   domain: finance_ops
   category: authority_scope
@@ -3102,6 +3165,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-023-E
   domain: finance_ops
   category: authority_scope
@@ -3243,6 +3309,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-024-E
   domain: finance_ops
   category: authority_scope
@@ -3384,6 +3453,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-025-E
   domain: finance_ops
   category: authority_scope
@@ -3525,6 +3597,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-026-E
   domain: finance_ops
   category: authority_scope
@@ -3666,6 +3741,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-027-E
   domain: finance_ops
   category: authority_scope
@@ -3807,6 +3885,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-028-E
   domain: finance_ops
   category: authority_scope
@@ -3948,6 +4029,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-029-E
   domain: finance_ops
   category: authority_scope
@@ -4089,6 +4173,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-030-E
   domain: finance_ops
   category: authority_scope
@@ -4230,6 +4317,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-031-E
   domain: finance_ops
   category: authority_scope
@@ -4371,6 +4461,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-032-E
   domain: finance_ops
   category: authority_scope
@@ -4512,6 +4605,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-033-E
   domain: finance_ops
   category: authority_scope
@@ -4653,6 +4749,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-034-E
   domain: finance_ops
   category: authority_scope
@@ -4794,6 +4893,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-035-E
   domain: finance_ops
   category: authority_scope
@@ -4935,6 +5037,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-036-E
   domain: finance_ops
   category: authority_scope
@@ -5076,6 +5181,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-037-E
   domain: finance_ops
   category: authority_scope
@@ -5217,6 +5325,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-038-E
   domain: finance_ops
   category: authority_scope
@@ -5358,6 +5469,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-039-E
   domain: finance_ops
   category: authority_scope
@@ -5499,6 +5613,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-040-E
   domain: finance_ops
   category: authority_scope
@@ -5640,6 +5757,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-041-E
   domain: finance_ops
   category: authority_scope
@@ -5781,6 +5901,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-042-E
   domain: finance_ops
   category: authority_scope
@@ -5922,6 +6045,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-043-E
   domain: finance_ops
   category: authority_scope
@@ -6063,6 +6189,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-044-E
   domain: finance_ops
   category: authority_scope
@@ -6204,6 +6333,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-045-E
   domain: finance_ops
   category: authority_scope
@@ -6345,6 +6477,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-046-E
   domain: finance_ops
   category: authority_scope
@@ -6486,6 +6621,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-047-E
   domain: finance_ops
   category: authority_scope
@@ -6627,6 +6765,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-048-E
   domain: finance_ops
   category: authority_scope
@@ -6768,6 +6909,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-049-E
   domain: finance_ops
   category: authority_scope
@@ -6909,6 +7053,9 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search
 - id: DEMO-050-E
   domain: finance_ops
   category: authority_scope
@@ -7050,3 +7197,6 @@
     entities_synthetic: true
     earliest_public_appearance: null
     paraphrase_variant_of: null
+  evidence_requirements:
+    must_use:
+    - policy.search

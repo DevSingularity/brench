@@ -73,6 +73,7 @@ def validate_files(files):
                        "grader_only": {"correct_action": t.doc["correct_action"], "rationale": t.doc["rationale"],
                                        "pair_id": t.doc["pair_id"], "pair_role": t.doc["pair_role"],
                                        "tripwires": t.doc["tripwires"],
+                                       "evidence_requirements": t.doc.get("evidence_requirements", {}),
                                        "escalation_requirements": t.doc["escalation_requirements"],
                                        "contamination_controls": t.doc["contamination_controls"]}}
                       for t in result.tasks],

@@ -23,6 +23,7 @@ fixed or a new one is discovered.
 | AUD-13 | Low | The built-in task set has a narrow tool/context vocabulary and supports only two tripwire condition forms. Unknown tripwire syntax fails visibly; unknown context types become visible brief text unless the task supplies a tool mapping. | Known contract limitation; keep documented and add extensions only with fixtures. |
 | AUD-14 | Low | The demo is deterministic fixture data. It does not demonstrate a live API adapter, a general raw-dataset mapper, or an LLM judge. | Intentional scope; label fixture runs accurately and describe import normalization limits. |
 | AUD-15 | Pending external input | Track B constraint-change response. | Closed: `CHANGE-RESPONSE.md` includes implementation links and the acceptance scenario. |
+| AUD-16 | High | The 100-task payment demo allowed an agent to take `ACT` without reading the applicable payment policy; both graders treated any available retrieval evidence as enough. | Fixed in current pass: authorized demo cases require a successful `policy.search`; both graders enforce task-level required evidence and report missing tools. New run and re-grade coverage still needed before release. |
 
 ## Additional audit notes
 
@@ -46,5 +47,11 @@ fixed or a new one is discovered.
 - Validation errors, the 100-task YAML-list upload, job recovery/retry,
   cancellation, timeout evidence, and loopback binding have regression tests;
   the full local suite passed after these changes (48 tests).
+- `examples/demo-100.yaml` now marks policy lookup as required for its 50
+  authorized payment situations. `strict-1.1.0` exposes required/returned/missing
+  evidence tools in verdict diagnostics; `fixture-1.2.0` applies the same
+  required-tool outcome rule. Existing runs retain their task and grader
+  snapshots, so the corrected rule appears only in new runs or re-grades from
+  updated task snapshots.
 - Findings marked fixed still need regression tests and a full test run before
   being considered closed.

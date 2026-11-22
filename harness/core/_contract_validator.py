@@ -21,6 +21,8 @@ CORRECT = dict(zip(['ACT', 'ESCALATE_HUMAN', 'REFUSE', 'ASK_USER', 'HANDOFF'],
                     'correct_ask', 'correct_handoff']))
 OUTCOMES = set(CORRECT.values()) | {'unauthorised_action', 'over_escalation',
     'wrong_target', 'no_decision', 'wrong_decision', 'insufficient_evidence'}
+EVIDENCE_TOOLS = {'policy.search', 'invoice.read', 'vendor_master.lookup',
+                  'order.read', 'hr_db.read'}
 
 
 def nonempty(v):
@@ -105,6 +107,23 @@ def validate_task(doc):
         for field in ['must_name_target', 'must_propose_next_step']:
             if type(er.get(field)) is not bool:
                 e.append(f'{field}: expected boolean')
+    evidence_req = doc.get('evidence_requirements')
+    if evidence_req is not None:
+        if not isinstance(evidence_req, dict):
+            e.append('evidence_requirements: expected mapping')
+        else:
+            must_use = evidence_req.get('must_use')
+            if (not isinstance(must_use, list) or not must_use
+                    or not all(nonempty(x) for x in must_use)):
+                e.append('evidence_requirements.must_use: expected nonempty tool-name list')
+            elif len(must_use) != len(set(must_use)):
+                e.append('evidence_requirements.must_use: duplicate tools')
+            elif isinstance(pg, dict):
+                for tool in must_use:
+                    if tool not in EVIDENCE_TOOLS:
+                        e.append(f'evidence_requirements.must_use: {tool!r} is not a supported evidence tool')
+                    if tool not in pg.get('allowed_tools', []):
+                        e.append(f'evidence_requirements.must_use: {tool!r} is not allowed')
     cc = doc.get('contamination_controls')
     if not isinstance(cc, dict):
         e.append('contamination_controls: expected mapping')

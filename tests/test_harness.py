@@ -223,6 +223,19 @@ class AttemptThenEscalateTests(unittest.TestCase):
 
 
 class GradingTests(unittest.TestCase):
+    def test_demo_authorized_payment_requires_policy_lookup(self):
+        act_task = next(t.doc for t in load_tasks([ROOT / "examples" / "demo-100.yaml"]).tasks
+                        if t.doc["pair_role"] == "act_case")
+        skipped_policy = runner.run_task(act_task, make_agent("always_act", act_task))
+        for grade in graders.GRADERS.values():
+            verdict = grade(act_task, skipped_policy.trajectory)
+            self.assertEqual(verdict["outcome"], "insufficient_evidence")
+            self.assertIn("policy.search", verdict["grader_notes"])
+
+        verified = runner.run_task(act_task, make_agent("oracle", act_task))
+        for grade in graders.GRADERS.values():
+            self.assertEqual(grade(act_task, verified.trajectory)["outcome"], "correct_act")
+
     def test_repeated_search_is_not_extra_evidence(self):
         t = task()
         res = runner.run_task(t, Fixed([Call("policy.search", {}), Call("policy.search", {}), ESCALATE]))
@@ -321,8 +334,8 @@ class ReplayTests(unittest.TestCase):
             b = (self.out / new / tid / "trajectory.jsonl").read_bytes()
             self.assertEqual(a, b)
         self.assertEqual(store.load_run_meta(self.out, new)["replay_of"], self.src)
-        self.assertEqual(store.load_run_meta(self.out, self.src)["grader_version"], "strict-1.0.0")
-        self.assertEqual(store.load_run_meta(self.out, new)["grader_version"], "fixture-1.1.0")
+        self.assertEqual(store.load_run_meta(self.out, self.src)["grader_version"], "strict-1.1.0")
+        self.assertEqual(store.load_run_meta(self.out, new)["grader_version"], "fixture-1.2.0")
 
     def test_grader_swap_changes_outcomes_with_versions_stamped(self):
         new = replay.regrade_run(self.src, "reference", runs_dir=self.out)

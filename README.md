@@ -1,243 +1,175 @@
 # Brench
 
-Brench evaluates whether an AI agent acted within its authority. It
-runs scripted agents against task-defined mock tools, keeps a complete trace,
-grades the decision with deterministic rules, and serves the evidence in a
-local results UI. It does not use an LLM as a judge.
+Brench is a local harness for inspecting whether an AI agent stayed within its
+stated authority. It runs scripted fixture agents against an isolated tool
+simulator, records each interaction, grades the saved trajectory, and presents
+the evidence in a browser UI. It does not call a live model or use an LLM as a
+judge.
 
-## Track B scope (candidate clarification)
+The intended evaluation path is:
 
-This project is **Track B: full-stack harness**. The official clarification for
-all candidates, kept here so future work stays in scope:
-
-- **Tasks:** Two sample task YAML files are supplied in `starter/examples/`.
-  Track B uses these to build the evaluation harness. (Track A creates six task
-  pairs / 12 tasks; Track C builds an environment that generates reproducible
-  task instances.)
-- **Fixture agent (Track B):** a simple scripted agent that calls mock tools and
-  produces an execution trace. It does not require an LLM.
-- **Judge/grader (Track B):** separate from the agent; it evaluates the saved
-  trace against the task rules. A deterministic grader is sufficient; you may
-  adapt `starter/reference_grader.py` with attribution.
-- **Required Track B flow:** Task → fixture agent → saved trace → grader →
-  results UI. Demonstrate swapping the grader and re-grading **without rerunning
-  the agent**.
-
-How this repo maps to that flow:
-
-| Required step | Where it lives |
-|---|---|
-| Task | `tasks/` — the two supplied samples `FIN-INV-0007` / `FIN-INV-0007b` (plus two extra self-authored pairs, `HR-0201-*` and `REF-0101-*`, built on the same contract to exercise the multi-domain results matrix) |
-| Fixture agent | `harness/core/agents.py` — six scripted agents, no LLM |
-| Saved trace | `runs/<run_id>/<task_id>/trajectory.jsonl` written by `harness/core/runner.py` |
-| Grader | `harness/evaluation/graders/` — `strict` (ours) and `reference` (adapted from the supplied `reference_grader.py`, attribution in the module docstring) |
-| Results UI | `harness/web/server.py` + `ui/` (built output committed in `ui/dist`) |
-| Grader swap without rerunning the agent | `python -m harness replay <run> --grader reference` — copies the saved trace byte-for-byte, grades again, `kind: replay`, source untouched |
-
-The step-by-step demo script with defence notes for each decision is in
-`docs/plans/WALKTHROUGH.md`.
-
-## Current architecture
-
-Brench is a local, single-process Python application with a static React
-frontend. The standard-library HTTP server serves both `ui/dist/` and the JSON
-API from `127.0.0.1:8765`. In the browser workflow, the server validates
-uploaded task YAML, starts one in-process pipeline job, and reports progress
-through a polled job endpoint. The CLI can also run batches, import traces,
-re-grade runs, and start the same UI server.
-
-During an evaluation, the runner gives a scripted fixture agent only the
-allow-listed task observation. The agent interacts with a simulated tool
-environment; tripwires can block tool effects while preserving the attempt in
-the trace. The selected deterministic grader evaluates that trace, and the
-batch runner saves the task snapshot, trajectory, verdict, and metadata under
-`runs/<run_id>/`. The API builds run summaries and task detail views from those
-saved files. Re-grading copies the task snapshot and trajectory into a new run
-and writes a new verdict without invoking the agent.
-
-```mermaid
-flowchart LR
-    User[User]
-    CLI[CLI: python -m harness]
-
-    subgraph Client[Browser]
-        UI[React UI]
-    end
-
-    subgraph App[Local Brench process]
-        HTTP[Stdlib HTTP server<br/>JSON API + static UI]
-        Jobs[PipelineJobs<br/>in-process, one active run]
-        Load[Task loader<br/>YAML contract validation]
-        Batch[Batch orchestrator]
-        Runner[Core runner]
-        Agent[Scripted fixture agent]
-        Env[Mock tool environment<br/>tripwire checks]
-        Grader[Deterministic grader<br/>strict or reference]
-        Replay[Trace replay / re-grade]
-        Importer[External trace importer]
-        Reports[Report aggregation]
-    end
-
-    subgraph Disk[Local filesystem]
-        Tasks[tasks/*.yaml\nor uploaded YAML]
-        Runs[runs/{run_id}/<br/>task snapshots · trajectories<br/>verdicts · metadata]
-        UIAssets[ui/dist assets]
-    end
-
-    User --> UI
-    UI -->|API requests and job polling| HTTP
-    UIAssets -->|static files| HTTP
-    HTTP -->|HTML, CSS and JavaScript| UI
-    HTTP -->|create evaluation| Jobs
-    Jobs --> Batch
-    CLI -->|serve UI| HTTP
-    CLI -->|run batch| Batch
-    CLI -->|re-grade| Replay
-    CLI -->|import trace| Importer
-    Batch --> Load
-    Tasks --> Load
-    Load --> Runner
-    Runner <--> Agent
-    Runner <--> Env
-    Runner -->|trajectory| Batch
-    Batch --> Grader
-    Grader -->|verdict| Batch
-    Batch -->|persist each completed task| Runs
-    HTTP --> Reports
-    Runs --> Reports
-    Reports -->|summaries and evidence| HTTP
-    HTTP -->|re-grade request| Replay
-    Runs -->|saved trace + task snapshot| Replay
-    Replay --> Grader
-    Replay -->|new linked run; source unchanged| Runs
-    Tasks --> Importer
-    Importer --> Grader
-    Importer -->|imported task evidence| Runs
+```text
+task contract → fixture agent → simulated tools → saved trajectory → grader → evidence UI
 ```
 
-`docker-compose.yml` currently defines an optional local PostgreSQL 16
-container, but the harness does not connect to it: evaluation state and
-evidence are file-backed under `runs/`. Pipeline state and ordered events are
-persisted in `runs/.pipeline-jobs/`; on restart an unfinished job is marked
-interrupted and its saved trace/verdict evidence remains available. Live work is
-not resumed automatically; retry starts a new immutable run.
+Brench is a Track B full-stack evaluation harness. Its fixtures make the
+execution path reproducible and easy to inspect; they are not representative
+model benchmarks. See [the technical overview](docs/TECHNICAL-OVERVIEW.md) for
+module boundaries, data formats, API routes, failure behavior, and known
+limitations. See [DECISIONS.md](DECISIONS.md) for the rationale and tradeoffs
+behind the current design.
 
-## Run the offline demo
+## Quick start
 
-Python 3.10+ and PyYAML are the only runtime requirements. The compiled React
-UI is committed under `ui/dist`; Node is only needed when changing the UI.
+Requirements: Python 3.10 or newer and the dependencies in `requirements.txt`.
+Node is only required when rebuilding the frontend.
 
 ```sh
 python -m pip install -r requirements.txt
-python -m harness demo
+python -m harness demo --no-browser
 ```
 
-The command runs fixture agents over `tasks/`, writes saved evidence under
-`runs/`, and serves the UI at `http://127.0.0.1:8765`. Use `--no-browser` to
-keep it from opening a browser automatically. No API key or network access is
-needed after PyYAML is installed. The current evidence store is local
-file-backed JSON/YAML; PostgreSQL is not currently used by the harness.
+The demo writes runs under `runs/` and starts the local UI at
+`http://127.0.0.1:8765`. Open that address in a browser. To choose another port
+or suppress the UI, run `python -m harness demo --help`.
 
-To start only the app without running the preset demo, use
-`python -m harness serve --no-browser --port 8765`. The API binds only to
-`127.0.0.1`. JSON endpoints require `application/json`, enforce body limits,
-and use a 10-second socket timeout. Uploads accept at most 32 YAML files and
-2 MB total; validation returns file/field errors and matched-pair coverage.
-The shared loader rejects common credential fields and recognizable API
-tokens, though it is not a general secret scanner. Do not place secrets in task input. Uploaded validated task text is
-retained locally for retries and evidence snapshots, so treat `runs/` as
-sensitive local data.
+To start the UI without launching fixture runs:
 
-### Run a task set from the UI
+```sh
+python -m harness serve --no-browser --port 8765
+```
 
-Open the workspace from the landing page and choose **New evaluation**. Add one
-or more `.yaml` / `.yml` task files, validate them, choose a scripted fixture
-agent and grader, then start the pipeline. The UI shows task loading and
-validation, fixture dispatch, every trace record, grading and evidence saving.
-On completion, open the run to inspect the saved verdict and full trace. The
-workspace also offers **Re-grade saved trace**: choose another grader to create
-a linked replay without calling the agent again. Fixture runs are deterministic
-scripts, not live model results. `oracle` is a harness sanity check that can see
-trusted task metadata and must not be treated as a model baseline.
+To run a focused, known grader-difference example:
 
-For a larger comparison demo, upload `examples/demo-100.yaml`. It contains 100
-synthetic payment-authority situations in one YAML list, arranged as 50 matched
-pairs: one case where escalation is required and one where a signed exception
-authorizes action. Run `attempt_then_escalate` first to make blocked attempts
-visible in the trace; then run `always_escalate` to contrast cautious behavior on
-authorized cases, and `always_act` to show risky behavior on cases that exceed
-the standing limit. On each completed run, use **Re-grade saved trace** to apply
-the other grader without rerunning the agent. These are deliberately simple
-scripted fixtures, not realistic AI agents, and grader agreement or disagreement
-is specific to these deterministic traces.
+```sh
+python -m harness run --tasks examples/grader-difference.yaml \
+  --agent always_escalate --grader strict --run-id grader-diff-demo
+python -m harness replay grader-diff-demo --grader reference \
+  --new-run-id grader-diff-demo-reference
+```
 
-Pipeline job state and ordered events are persisted under `runs/.pipeline-jobs/`;
-uploaded inputs are stored separately there so a failed or interrupted job can
-be retried as a new immutable run. Cancellation stops between tasks, allowing
-the current task to finish or hit its timeout. Each task runs in a child process
-so the hard timeout can terminate a stuck fixture. Task snapshots, trajectories,
-verdicts and run metadata are stored under `runs/` as each task completes. Keep
-the server bound to loopback for local use.
+The `GRADER-DIFF-001-E` task is designed so the fixture names the escalation
+contact but not the full configured role string. The strict grader accepts the
+person name; the reference grader expects the full target string. This should
+produce `correct_escalation` and `wrong_target` on the same saved trajectory.
+The paired authorized-action task also shows that blanket escalation can be an
+over-escalation. This is a controlled behavior example, not a claim about model
+performance.
 
-Useful commands:
+For the larger synthetic comparison, upload `examples/demo-100.yaml` in the
+UI. It contains 50 matched pairs of payment-authority tasks. Start with
+`attempt_then_escalate` to inspect blocked attempts, then compare
+`always_escalate` and `always_act`. Re-grade selected runs to compare graders
+without executing the agent again. The fixtures use simple rules and generated
+records; they do not reason like deployed agents.
+
+## What gets saved
+
+The default backend is the local filesystem. A run has a unique ID and stores
+its run metadata plus, for each completed task, the exact task snapshot,
+JSONL trajectory, verdict, and per-task metadata under `runs/<run_id>/`.
+Pipeline job state, progress events, and retry inputs live under
+`runs/.pipeline-jobs/`. Treat this directory as local evaluation data: uploaded
+tasks and traces can contain sensitive information.
+
+A re-grade creates a separate linked run. It copies the task snapshot and
+trajectory byte-for-byte, records SHA-256 hashes for that evidence, and writes a
+new verdict and run metadata. It does not invoke the fixture agent or overwrite
+the source run. See [the replay implementation](harness/evaluation/replay.py)
+and [the technical overview](docs/TECHNICAL-OVERVIEW.md#re-grading-and-evidence-identity).
+
+`docker-compose.yml` defines a PostgreSQL 16 service for local development, but
+**the current main-worktree application does not use PostgreSQL**. The harness
+continues to read and write run evidence on disk. Starting Compose only starts
+the database service; it does not migrate or connect the app to it.
+
+## Task and grading model
+
+A task is a YAML mapping (or a YAML list of mappings) validated against the
+published task contract. It separates agent-visible information—role, grants,
+allowed tools, brief, and tool-retrieved context—from grader-only fields such
+as the expected action, rationale, tripwires, and escalation requirements.
+The runner gives the agent only the allow-listed observation. Pair metadata is
+used for coverage and reporting, not exposed to the agent.
+
+Fixture agents implement a small `step(observation)` protocol and return a
+message, tool call, or terminal decision. The simulator checks tool
+permissions and tripwires before executing an action. A blocked attempt is
+still recorded and counts as a violation; the simulator has no network or real
+system side effects.
+
+Two deterministic graders share the same interface:
+
+- `reference` is the supplied contract grader adapted into the package. It is a
+  comparison baseline with documented limitations.
+- `strict` recomputes tripwire hits from trusted task rules and raw calls and
+  applies stricter message and target matching. It is a project implementation,
+  not an independent safety oracle.
+
+Tasks may declare grader-only `evidence_requirements.must_use` tools. Both
+graders then require successful, unblocked results from those tools before
+awarding a correct outcome. In `examples/demo-100.yaml`, each of the 50
+authorized payment cases requires `policy.search`, so `always_act` without a
+policy lookup is graded `insufficient_evidence`. This checks that the trace
+contains a required retrieval result; it cannot prove the agent understood or
+used the returned content. Re-grade an old run against its saved task snapshot;
+to apply changed task rules, create a new run from the updated YAML.
+
+The result UI reports counts and denominators by outcome, category, domain,
+stakes tier, and pair coverage. Selecting a task opens its verdict, task
+snapshot, agent-visible observation, grader diagnostics, and trajectory.
+Outcomes are not collapsed into one score: unauthorized actions,
+over-escalations, and other errors remain distinct.
+
+## CLI
 
 ```sh
 python -m harness validate-tasks tasks/
 python -m harness run --agent oracle --run-id oracle-check
-python -m harness replay always_escalate-seed0 --grader strict
+python -m harness list
+python -m harness replay oracle-check --grader reference
 python -m harness import-trace --help
+python -m harness serve --help
+```
+
+`oracle` can inspect trusted task metadata and is only a harness sanity check;
+never interpret its results as an agent baseline. Use `python -m harness
+--help` for all commands and options.
+
+## Development
+
+The Python server serves both the JSON API and the committed static React
+bundle in `ui/dist/`. Rebuild the frontend only when changing UI source:
+
+```sh
+cd ui
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+Run the Python test suite with:
+
+```sh
 python -m unittest discover -s tests -v
 ```
 
-For UI development only, install the pinned JavaScript dependencies in `ui/`
-and run `pnpm dev` or `pnpm build`. Rebuilds update the committed
-`ui/dist/` that Python serves.
+The API is intentionally unauthenticated and binds only to `127.0.0.1`. Keep it
+on loopback. Upload validation limits requests to 32 YAML files and 2 MB total,
+checks UTF-8 and file names, validates task contracts, rejects duplicate YAML
+keys, and scans for common credential patterns. That scan is a guardrail, not a
+complete secret detector; do not put credentials in task input.
 
-## Project layout
+## Repository map
 
-- `harness/core/` contains task loading, contract validation, mock tools, the
-  runner and fixture agents.
-- `harness/evaluation/` contains the grader registry, both graders, trace import
-  and replay.
-- `harness/persistence/` contains batch execution, run storage and summaries.
-- `harness/web/` contains the local HTTP API and static UI server; `harness/`
-  itself provides the CLI. The contract validator is vendored in the package,
-  so runtime behavior does not depend on the archived candidate pack.
-- `tasks/` contains editable example task YAML files. Pass hidden or custom
-  task files with `--tasks PATH`.
-- `tests/` contains the harness tests.
-- `ui/` contains the React source and its built, self-contained distribution.
-- `runs/` is generated by demo and run commands; each task stores the exact
-  task snapshot, `trajectory.jsonl`, `verdict.json` and metadata.
-- `reference/legacy-candidate-pack/` is an untouched copy of the supplied
-  candidate pack for historical reference. The app does not read from it.
-
-## Trace import and grading
-
-External traces can be converted to the contract format and graded with
-`python -m harness import-trace`. See `python -m harness import-trace --help`
-for the task, trajectory, model, run ID and optional action-alias arguments.
-The `reference` and `strict` graders implement the shared `grade(task,
-trajectory, *, model, run_id, seed)` interface. `replay` grades saved traces
-again without rerunning an agent and leaves the source trace untouched.
-
-The UI reports counts and denominators by task category, domain and stakes;
-empty matrix cells mean no cases were run. Unauthorised actions and
-over-escalations are separate outcomes. Selecting a task opens its verdict and
-full trace, including blocked attempts.
-
-## Limits
-
-The included agents are deterministic fixtures, not live model runs. Tool
-effects are simulated and never call external services. Browser-triggered runs
-are limited to one active pipeline per server process. Cancellation is
-cooperative between tasks: the active task finishes or reaches its timeout.
-Each task runs in a child process with a hard deadline so a stuck fixture can be
-terminated. Run completion is committed by writing the final run metadata after
-all task verdicts; each task's verdict file is its commit marker. A crash can
-leave an explicitly interrupted partial run, not an atomic all-or-nothing batch.
-Tripwire conditions
-support only `amount_usd > N` and `payee not in vendor_master`; unsupported
-conditions fail validation. An imported trace can be graded only to the extent
-that it has been normalized to the published trajectory contract. Scores do
-not establish general model safety or replace task-specific policy review.
+- `harness/core/` — task loading, contract validation, fixture agents, runner,
+  tripwire conditions, and mock tools.
+- `harness/evaluation/` — grader registry, grader implementations, trace import,
+  and re-grading.
+- `harness/persistence/` — file-backed run storage and report aggregation.
+- `harness/web/` — local HTTP API, static asset server, and browser-run jobs.
+- `ui/` — React application source and committed build output.
+- `tasks/`, `examples/` — contract tasks and synthetic demonstrations.
+- `tests/` — Python contract, runner, persistence, grading, and API tests.
+- `docs/` — implementation notes, plans, and [technical overview](docs/TECHNICAL-OVERVIEW.md).
+- `reference/legacy-candidate-pack/` — retained source materials for reference;
+  runtime code does not load from this directory.
